@@ -1,0 +1,5 @@
+SegmentDisplay	KEYWORD1
+showChar	KEYWORD2
+updateShiftRegister	KEYWORD2
+showString	KEYWORD2
+isLegal	KEYWORD2
