@@ -25,7 +25,7 @@ class GxEPD2_437c : public GxEPD2_EPD
     static const uint16_t HEIGHT = 368;
     static const GxEPD2::Panel panel = GxEPD2::Waveshare437inch4color;
     static const bool hasColor = true;
-    static const bool hasPartialUpdate = false;
+    static const bool hasPartialUpdate = true;
     static const bool hasFastPartialUpdate = false;
     static const uint16_t power_on_time = 200; // ms, e.g. 172000us
     static const uint16_t power_off_time = 150; // ms, e.g. 140000us
@@ -63,15 +63,13 @@ class GxEPD2_437c : public GxEPD2_EPD
     void refresh(int16_t x, int16_t y, int16_t w, int16_t h); // screen refresh from controller memory, partial screen
     void powerOff(); // turns off generation of panel driving voltages, avoids screen fading over time
     void hibernate(); // turns powerOff() and sets controller to deep sleep for minimum power use, ONLY if wakeable by RST (rst >= 0)
-    void setPaged(); // for GxEPD2_154c and GxEPD2_437c paged workaround
+    void setPaged(); // for GxEPD2_154c paged workaround, also for 4-color for use with hasPartialUpdate = false
   private:
+    void _refresh(bool partial_update_mode);
+    void _setPartialRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h, bool partial_mode = true);
     void _PowerOn();
     void _PowerOff();
     void _InitDisplay();
-    void _Init_Full();
-    void _Init_Part();
-    void _Update_Full();
-    void _Update_Part();
   private:
     bool _paged;
 };

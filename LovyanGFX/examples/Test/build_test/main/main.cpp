@@ -6,11 +6,16 @@
   #define LGFX_USE_V1
 #endif
 
-#if defined ( ARDUINO ) && defined ( ESP32 )
+#if __has_include(<SPIFFS.h>)
   #include <SPIFFS.h>
 #endif
 
 #include <LovyanGFX.hpp>
+
+#if defined SKIP_I2C_TEST
+  #define DUMMY_DISPLAY
+#endif
+
 
 #if defined DUMMY_DISPLAY
   // AUTODETECT will fail, so let's build a dummy object
@@ -36,6 +41,9 @@
     }
   };
 #endif
+
+
+#if !defined SKIP_I2C_TEST
 
   class LGFX_I2C : public lgfx::LGFX_Device
   {
@@ -64,9 +72,14 @@
     }
   };
 
+#endif
 
 static LGFX display1;
-static LGFX_I2C display2;
+
+#if !defined SKIP_I2C_TEST
+  static LGFX_I2C display2;
+#endif
+
 static LGFX_Sprite sprite(&display1);
 
 void test(LGFX_Device &lcd)
@@ -184,7 +197,7 @@ void test(LGFX_Device &lcd)
   lcd.drawJpg((uint8_t*)nullptr, 0, 0, 0);
   lcd.drawQoi((uint8_t*)nullptr, 0, 0, 0);
 
-#if defined ( ARDUINO ) && defined ( ESP32 )
+#if __has_include(<SPIFFS.h>)
   lcd.drawBmpFile(SPIFFS, "/test.bmp");
   lcd.drawPngFile(SPIFFS, "/test.png");
   lcd.drawJpgFile(SPIFFS, "/test.jpg");
@@ -195,7 +208,9 @@ void test(LGFX_Device &lcd)
 void setup()
 {
   test(display1);
-  test(display2);
+  #if !defined SKIP_I2C_TEST
+    test(display2);
+  #endif
 }
 
 void loop(void)

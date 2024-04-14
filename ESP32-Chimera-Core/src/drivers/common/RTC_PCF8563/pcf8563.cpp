@@ -115,13 +115,13 @@ RTC_Date PCF8563_Class::getDateTime()
     year = _bcd_to_dec(_data[6]);
     year = cetury ?  1900 + year : 2000 + year;
     return RTC_Date(
-               year,
-               _data[5],
-               _data[3],
-               _data[2],
-               _data[1],
-               _data[0]
-           );
+            year,
+            _data[5],
+            _data[3],
+            _data[2],
+            _data[1],
+            _data[0]
+        );
 }
 
 RTC_Alarm PCF8563_Class::getAlarm()
@@ -170,35 +170,42 @@ void PCF8563_Class::setAlarm(RTC_Alarm alarm)
     setAlarm(alarm.minute, alarm.hour, alarm.day, alarm.weekday);
 }
 
+
+// constrain() macro complains abouf type limit, but we'll ignore it
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+
 void PCF8563_Class::setAlarm(uint8_t hour, uint8_t minute, uint8_t day, uint8_t weekday)
 {
     if (minute != PCF8563_NO_ALARM) {
-        _data[0] = _dec_to_bcd(constrain(minute, 0, 59));
+        _data[0] = _dec_to_bcd(constrain(minute, (uint8_t)0x00, (uint8_t)0x3b));
         _data[0] &= ~PCF8563_ALARM_ENABLE;
     } else {
         _data[0] = PCF8563_ALARM_ENABLE;
     }
 
     if (hour != PCF8563_NO_ALARM) {
-        _data[1] = _dec_to_bcd(constrain(hour, 0, 23));
+        _data[1] = _dec_to_bcd(constrain(hour, (uint8_t)0x00, (uint8_t)0x17));
         _data[1] &= ~PCF8563_ALARM_ENABLE;
     } else {
         _data[1] = PCF8563_ALARM_ENABLE;
     }
     if (day != PCF8563_NO_ALARM) {
-        _data[2] = _dec_to_bcd(constrain(day, 1, 31));
+        _data[2] = _dec_to_bcd(constrain(day, (uint8_t)0x01, (uint8_t)0x1f));
         _data[2] &= ~PCF8563_ALARM_ENABLE;
     } else {
         _data[2] = PCF8563_ALARM_ENABLE;
     }
     if (weekday != PCF8563_NO_ALARM) {
-        _data[3] = _dec_to_bcd(constrain(weekday, 0, 6));
+        _data[3] = _dec_to_bcd(constrain(weekday, (uint8_t)0x00, (uint8_t)0x06));
         _data[3] &= ~PCF8563_ALARM_ENABLE;
     } else {
         _data[3] = PCF8563_ALARM_ENABLE;
     }
     _writeByte(PCF8563_ALRM_MIN_REG, 4, _data);
 }
+
+#pragma GCC diagnostic pop
 
 void PCF8563_Class::setAlarmByMinutes(uint8_t minute)
 {
@@ -361,12 +368,12 @@ RTC_Date::RTC_Date(
 
 
 RTC_Date::RTC_Date(uint16_t y,
-                   uint8_t m,
-                   uint8_t d,
-                   uint8_t h,
-                   uint8_t mm,
-                   uint8_t s
-                  ) : year(y), month(m), day(d), hour(h), minute(mm), second(s)
+                uint8_t m,
+                uint8_t d,
+                uint8_t h,
+                uint8_t mm,
+                uint8_t s
+                ) : year(y), month(m), day(d), hour(h), minute(mm), second(s)
 {
 
 }

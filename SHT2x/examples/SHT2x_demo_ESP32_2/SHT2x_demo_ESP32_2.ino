@@ -6,21 +6,20 @@
 //
 // ESP32 specific - see issue #7
 
+
 #include "Wire.h"
 #include "SHT2x.h"
 
-#define SDA_1 21
-#define SCL_1 22
-#define SDA_2 33
-#define SCL_2 32
 
-TwoWire I2Cone = TwoWire(0);
-TwoWire I2Ctwo = TwoWire(1);
-SHT2x internal;
-SHT2x external;
+#define SDA_1   21
+#define SCL_1   22
+#define SDA_2   33
+#define SCL_2   32
 
-uint32_t start;
-uint32_t stop;
+SHT2x internal(&Wire);
+SHT2x external(&Wire1);
+
+uint32_t start, stop;
 
 
 void setup()
@@ -30,11 +29,11 @@ void setup()
   Serial.print("SHT2x_LIB_VERSION: \t");
   Serial.println(SHT2x_LIB_VERSION);
 
-  I2Cone.begin(SDA_1, SCL_1);
-  I2Ctwo.begin(SDA_2, SCL_2);
+  Wire.begin(SDA_1, SCL_1);
+  Wire1.begin(SDA_2, SCL_2);
 
-  internal.begin(&I2Cone);
-  external.begin(&I2Ctwo);
+  internal.begin();
+  external.begin();
 
   uint8_t stat = internal.getStatus();
   Serial.print(stat, HEX);
@@ -67,5 +66,4 @@ void loop()
 }
 
 
-// -- END OF FILE --
-
+//  -- END OF FILE --

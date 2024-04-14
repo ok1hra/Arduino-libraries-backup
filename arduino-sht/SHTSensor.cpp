@@ -85,12 +85,12 @@ bool SHTI2cSensor::readFromI2c(TwoWire & wire,
   return true;
 }
 
-uint8_t SHTI2cSensor::crc8(const uint8_t *data, uint8_t len)
+uint8_t SHTI2cSensor::crc8(const uint8_t *data, uint8_t len, uint8_t crcInit)
 {
   // adapted from SHT21 sample code from
   // http://www.sensirion.com/en/products/humidity-temperature/download-center/
 
-  uint8_t crc = 0xff;
+  uint8_t crc = crcInit;
   uint8_t byteCtr;
   for (byteCtr = 0; byteCtr < len; ++byteCtr) {
     crc ^= data[byteCtr];
@@ -153,6 +153,82 @@ public:
     }
 };
 
+//
+// class SHT2xSensor (SHT20, SHT21, SHT25)
+//
+
+class SHT2xSensor : public SHTI2cSensor
+{
+public:
+  SHT2xSensor(TwoWire &wire)
+      // clock stretching disabled
+      : SHTI2cSensor(0x40,     // i2cAddress
+                     0xF3F5,   // i2cCommand Hi: T, Lo: RH
+                     85,       // duration
+                     -46.85,   // a (sht_t_poly1)
+                     175.72,   // b (sht_t_poly2)
+                     65536.0,  // c (sht_t_poly3)
+                     -6.0,     // x (sht_h_poly1)
+                     125.0,    // y (sht_h_poly2)
+                     65536.0,  // z (sht_h_poly3)
+                     1,        // cmd_Size
+                     wire)
+  {
+  }
+
+  bool readSample() override
+  {
+    uint8_t data[EXPECTED_DATA_SIZE];
+    uint8_t cmd[mCmd_Size];
+
+    // SHT2x sends T and RH in two separate commands (different to other sensors)
+    // so we have to spit the command into two bytes and
+    // have to read from I2C two times with EXPECTED_DATA_SIZE / 2
+
+    // Upper byte is T for SHT2x Sensors
+    cmd[0] = mI2cCommand >> 8;
+    // Lower byte is RH for SHT2x Sensors
+    cmd[1] = mI2cCommand & 0xff;
+
+    // read T from SHT2x Sensor
+    if (!readFromI2c(mWire, mI2cAddress, cmd, mCmd_Size, data,
+                     EXPECTED_DATA_SIZE / 2, mDuration)) {
+      DEBUG_SHT("SHT2x readFromI2c(T) false\n");
+      return false;
+    }
+    // read RH from SHT2x Sensor
+    if (!readFromI2c(mWire, mI2cAddress, &cmd[1], mCmd_Size, &data[3],
+                     EXPECTED_DATA_SIZE / 2, mDuration)) {
+      DEBUG_SHT("SHT2x readFromI2c(RH) false\n");
+      return false;
+    }
+
+    // -- Important: assuming each 2 byte of data is followed by 1 byte of CRC
+
+    // check CRC for both RH and T with a crc init value of 0
+    if (crc8(&data[0], 2, 0) != data[2] || crc8(&data[3], 2, 0) != data[5]) {
+      DEBUG_SHT("SHT2x crc8 false\n");
+      return false;
+    }
+
+    // check status bits [1..0] (see datasheet)
+    // bit 0: not used, bit 1: measurement type (0: temperature, 1 humidity)
+    if (((data[1] & 0x02) != 0x00) || ((data[4] & 0x02) != 0x02)) {
+      DEBUG_SHT("SHT2x status bits false\n");
+      return false;
+    }
+
+    // convert to Temperature/Humidity
+    uint16_t val;
+    val = (data[0] << 8) + (data[1] & ~0x03); // get value and clear status bits [1..0]
+    mTemperature = mA + mB * (val / mC);
+
+    val = (data[3] << 8) + (data[4] & ~0x03); // get value and clear status bits [1..0]
+    mHumidity = mX + mY * (val / mZ);
+
+    return true;
+  }
+};
 
 //
 // class SHT3xSensor
@@ -274,10 +350,15 @@ float SHT3xAnalogSensor::readTemperature()
 //
 
 const SHTSensor::SHTSensorType SHTSensor::AUTO_DETECT_SENSORS[] = {
+  SHT4X, // IMPORTANT: SHT4x needs to be probed before the SHT3x, since they
+         // share their I2C address, and probing for an SHT3x can cause the
+         // first reading of and SHT4x to be off.
+         // see https://github.com/Sensirion/arduino-sht/issues/27
+
+  SHT2X,
   SHT3X,
   SHT3X_ALT,
-  SHTC1,
-  SHT4X
+  SHTC1
 };
 const float SHTSensor::TEMPERATURE_INVALID = NAN;
 const float SHTSensor::HUMIDITY_INVALID = NAN;
@@ -289,6 +370,10 @@ bool SHTSensor::init(TwoWire & wire)
   }
 
   switch(mSensorType) {
+    case SHT2X:
+      mSensor = new SHT2xSensor(wire);
+      break;
+
     case SHT3X:
     case SHT85:
       mSensor = new SHT3xSensor(wire);

@@ -98,8 +98,8 @@ void GxEPD2_213::writeImage(const uint8_t bitmap[], int16_t x, int16_t y, int16_
   if ((w1 <= 0) || (h1 <= 0)) return;
   if (!_using_partial_mode) _Init_Part();
   _setPartialRamArea(x1, y1, w1, h1);
-  _startTransfer();
   _writeCommand(0x24);
+  _startTransfer();
   for (int16_t i = 0; i < h1; i++)
   {
     for (int16_t j = 0; j < w1 / 8; j++)
@@ -323,10 +323,13 @@ void GxEPD2_213::_PowerOn()
 
 void GxEPD2_213::_PowerOff()
 {
-  _writeCommand(0x22);
-  _writeData(0xc3);
-  _writeCommand(0x20);
-  _waitWhileBusy("_PowerOff", power_off_time);
+  if (_power_is_on)
+  {
+    _writeCommand(0x22);
+    _writeData(0xc3);
+    _writeCommand(0x20);
+    _waitWhileBusy("_PowerOff", power_off_time);
+  }
   _power_is_on = false;
   _using_partial_mode = false;
 }

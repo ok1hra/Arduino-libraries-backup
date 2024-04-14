@@ -1,7 +1,7 @@
 // Display Library for SPI e-paper panels from Dalian Good Display and boards from Waveshare.
-// Requires HW SPI and Adafruit_GFX. Caution: these e-papers require 3.3V supply AND data lines!
+// Requires HW SPI and Adafruit_GFX. Caution: the e-paper panels require 3.3V supply AND data lines!
 //
-// based on Demo Example from Good Display: http://www.e-paper-display.com/download_list/downloadcategoryid=34&isMode=false.html
+// Display Library based on Demo Example from Good Display: https://www.good-display.com/companyfile/32/
 //
 // Author: Jean-Marc Zingg
 //
@@ -87,6 +87,9 @@
 #if __has_include("epd3c/GxEPD2_583c.h")
 #include "epd3c/GxEPD2_583c.h"
 #endif
+#if __has_include("gdeq3c/GxEPD2_583c_GDEQ0583Z31.h")
+#include "gdeq3c/GxEPD2_583c_GDEQ0583Z31.h"
+#endif
 #if __has_include("epd3c/GxEPD2_583c_Z83.h")
 #include "epd3c/GxEPD2_583c_Z83.h"
 #endif
@@ -102,8 +105,14 @@
 #if __has_include("epd3c/GxEPD2_750c_Z90.h")
 #include "epd3c/GxEPD2_750c_Z90.h"
 #endif
+#if __has_include("gdey3c/GxEPD2_1160c_GDEY116Z91.h")
+#include "gdey3c/GxEPD2_1160c_GDEY116Z91.h"
+#endif
 #if __has_include("epd3c/GxEPD2_1248c.h")
 #include "epd3c/GxEPD2_1248c.h"
+#endif
+#if __has_include("gdem3c/GxEPD2_1330c_GDEM133Z91.h")
+#include "gdem3c/GxEPD2_1330c_GDEM133Z91.h"
 #endif
 
 template<typename GxEPD2_Type, const uint16_t page_height>
