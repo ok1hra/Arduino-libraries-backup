@@ -16,7 +16,9 @@
 #define EXTIO2_DEFAULT_ADDR         0x45
 #define EXTIO2_MODE_REG             0x00
 #define EXTIO2_OUTPUT_CTL_REG       0x10
+#define EXTIO2_OUTPUTS_CTL_REG      0x18
 #define EXTIO2_DIGITAL_INPUT_REG    0x20
+#define EXTIO2_DIGITAL_INPUTS_REG   0x28
 #define EXTIO2_ANALOG_INPUT_8B_REG  0x30
 #define EXTIO2_ANALOG_INPUT_12B_REG 0x40
 #define EXTIO2_SERVO_ANGLE_8B_REG   0x50
@@ -49,12 +51,15 @@ class M5_EXTIO2 {
     bool begin(TwoWire *wire = &Wire, uint8_t sda = SDA, uint8_t scl = SCL,
                uint8_t addr = EXTIO2_DEFAULT_ADDR);
     bool setAllPinMode(extio_io_mode_t mode);
+    bool setPinMode(uint8_t pin, extio_io_mode_t mode);
     bool setDeviceAddr(uint8_t addr);
     bool setServoAngle(uint8_t pin, uint8_t angle);
     bool setServoPulse(uint8_t pin, uint16_t pulse);
     bool setLEDColor(uint8_t pin, uint32_t color);
     bool setDigitalOutput(uint8_t pin, uint8_t state);
+    bool setAllDigitalOutputs(uint8_t pins);
     bool getDigitalInput(uint8_t pin);
+    uint8_t getAllDigitalInputs(void);
     uint16_t getAnalogInput(uint8_t pin, extio_anolog_read_mode_t bit = _8bit);
     uint8_t getVersion();
 };

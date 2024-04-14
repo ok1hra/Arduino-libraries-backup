@@ -9,7 +9,7 @@
  *
  * Written by Tony DiCola, Todd Treece for Adafruit Industries
  *
- * BSD license, all text here must be included in any redistribution.
+ * MIT license, all text here must be included in any redistribution.
  *
  */
 #ifndef ADAFRUITIO_ETHERNET_H
@@ -98,6 +98,16 @@ protected:
     } else {
       _status = AIO_NET_CONNECTED;
     }
+  }
+
+  /**************************************************************************/
+  /*!
+      @brief    Disconnect the ethernet connection.
+  */
+  /**************************************************************************/
+  void _disconnect() {
+    _client->stop();
+    delay(AIO_NET_DISCONNECT_WAIT);
   }
 };
 

@@ -3,8 +3,8 @@
  * @copyright Copyright (c) 2022 by M5Stack[https://m5stack.com]
  *
  * @Links [ACSSR](https://docs.m5stack.com/en/unit/acssr)
- * @version  V0.0.2
- * @date  2022-07-05
+ * @version  V0.0.3
+ * @date  2022-07-07
  */
 #ifndef _M5_ACSSR_H_
 #define _M5_ACSSR_H_

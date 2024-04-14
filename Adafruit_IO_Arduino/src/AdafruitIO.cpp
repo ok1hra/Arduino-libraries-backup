@@ -30,7 +30,7 @@
  *
  * @section license License
  *
- * BSD license, all text here must be included in any redistribution.
+ * MIT license, all text here must be included in any redistribution.
  *
  */
 #include "AdafruitIO.h"
@@ -246,9 +246,8 @@ AdafruitIO_Dashboard *AdafruitIO::dashboard(const char *name) {
 /**************************************************************************/
 /*!
     @brief    Provide status explanation strings.
-    @param    _status
-              The AIO status value
-    @return   A pointer to the status string.
+    @return   A pointer to the status string, _status. _status is the AIO status
+   value
 */
 /**************************************************************************/
 const __FlashStringHelper *AdafruitIO::statusText() {

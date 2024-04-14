@@ -22,6 +22,7 @@
 static constexpr size_t avg_count  = 1 << 5;
 static constexpr size_t delay_msec = 50;
 
+static M5_KMeter::error_code_t* errdata_buf;
 static float* tempdata_buf;
 static size_t tempdata_count;
 static size_t tempdata_idx = 0;
@@ -69,11 +70,14 @@ void setup(void) {
 
     tempdata_count = display.width() + 1;
     tempdata_buf   = (float*)malloc(tempdata_count * sizeof(float));
+    errdata_buf    = (M5_KMeter::error_code_t*)malloc(
+           tempdata_count * sizeof(M5_KMeter::error_code_t));
 
     float temperature = sensor.getTemperature();
     min_temp = max_temp = temperature;
     for (size_t i = 0; i < tempdata_count; ++i) {
         tempdata_buf[i] = temperature;
+        errdata_buf[i]  = M5_KMeter::error_code_t::err_unknown;
     }
     for (size_t i = 0; i < avg_count; ++i) {
         avg_buf[i] = temperature;
@@ -153,12 +157,15 @@ void drawGraph(void) {
             } while (max_temp > (gauge += step));
         }
 
+        canvas[flip].setColor(errdata_buf[drawindex] ==
+                                      M5_KMeter::error_code_t::err_ok
+                                  ? ~display.getBaseColor()
+                                  : 0xFF0000u);
         int y_min = y0, y_max = y1;
         if (y_min > y_max) {
             std::swap(y_min, y_max);
         }
-        canvas[flip].drawFastVLine(0, y_min, y_max - y_min + 1,
-                                   ~display.getBaseColor());
+        canvas[flip].drawFastVLine(0, y_min, y_max - y_min + 1);
         canvas[flip].pushSprite(&display, draw_x, graph_y_offset);
         flip = !flip;
     } while (++draw_x < display.width());
@@ -166,7 +173,32 @@ void drawGraph(void) {
 }
 
 void loop(void) {
-    // float temperature = sensor.getInternalTemp();
+    if (sensor.update()) {
+        // float temperature = sensor.getInternalTemp();
+        float temperature = sensor.getTemperature();
+        display.drawFloat(temperature, 2, display.width(), 0);
+    } else {
+        const char* err_msg;
+        switch (sensor.getError()) {
+            case M5_KMeter::error_code_t::err_i2c_fail:
+                err_msg = "I2C ERR";
+                break;
+            case M5_KMeter::error_code_t::err_unknown:
+                err_msg = "UNKNOWN";
+                break;
+            case M5_KMeter::error_code_t::err_open_circuit:
+                err_msg = "OPEN";
+                break;
+            case M5_KMeter::error_code_t::err_short_to_gnd:
+                err_msg = "GND";
+                break;
+            case M5_KMeter::error_code_t::err_short_to_vcc:
+                err_msg = "VCC";
+                break;
+        }
+        display.drawString(err_msg, display.width(), 0);
+    }
+
     float temperature = sensor.getTemperature();
 
     avg_buf[avg_index] = temperature;
@@ -182,18 +214,18 @@ void loop(void) {
         avg_temp += avg_buf[i] * k / avg_count;
     }
 
+    errdata_buf[tempdata_idx]  = sensor.getError();
     tempdata_buf[tempdata_idx] = 2 * avg_temp / avg_count;
     if (++tempdata_idx >= tempdata_count) {
         tempdata_idx = 0;
     }
 
     drawGraph();
-    display.drawFloat(temperature, 2, display.width(), 0);
 
     static uint32_t prev_msec;
     uint32_t msec = millis();
     if (msec - prev_msec < delay_msec) {
-        ESP_LOGI("loop", "%5.2f", temperature);
+        ESP_LOGI("loop", "%6.2f", temperature);
         m5gfx::delay(delay_msec - (msec - prev_msec));
     }
     prev_msec = msec;

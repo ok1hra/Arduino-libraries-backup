@@ -6,6 +6,8 @@
 ![Arduino Build](https://github.com/tobozo/M5Stack-SD-Updater/actions/workflows/ArduinoBuild.yml/badge.svg?branch=master)
 ![Platformio Build](https://github.com/tobozo/M5Stack-SD-Updater/actions/workflows/PlatformioBuild.yml/badge.svg?branch=master)
 
+![Library Downloads](https://img.shields.io/github/downloads/tobozo/M5Stack-SD-Updater/total)
+
 # M5Stack-SD-Updater
 
 <br />
@@ -36,7 +38,7 @@
 <br />
 
 **Micro SD Card (TF Card)** - formatted using FAT32. Max size 32 Gb.
-SDCard is recommended but the SDUpdater supports other filesystems such as SD_MMC, SPIFFS, LittleFS and PSRamFS.
+SDCard is recommended but the SDUpdater supports other filesystems such as SdFat, SD_MMC and LittleFS (SPIFFS will soon be deprecated).
 
 <br />
 
@@ -47,6 +49,8 @@ SDCard is recommended but the SDUpdater supports other filesystems such as SD_MM
 - [M5Stack-SD-Updater](https://github.com/tobozo/M5Stack-SD-Updater) (this library + its examples).
 
 - [ArduinoJSON](https://github.com/bblanchon/ArduinoJson/) (Optional, used by SD-Menu).
+
+- [ESP32-targz](https://github.com/tobozo/ESP32-targz) (Optional if using gzipped firmwares)
 
 All those are available in the [Arduino Library Manager](https://www.arduinolibraries.info/libraries/m5-stack-sd-updater) or by performing a [manual installation](https://www.arduino.cc/en/Guide/Libraries#toc5).
 
@@ -68,11 +72,12 @@ All those are available in the [Arduino Library Manager](https://www.arduinolibr
 
 <br />
 
-**2) Download the [SD-Content :floppy_disk:](https://github.com/tobozo/M5Stack-SD-Updater/releases/download/v0.4.1/SD-Apps-Folder.zip) folder from the release page and unzip it into the root of the SD Card.** Then put the SD Card into the M5Stack. This zip file comes preloaded with [precompiled apps](https://github.com/tobozo/M5Stack-SD-Updater/tree/master/examples/M5Stack-SD-Menu/SD-Apps) and the relative meta information for the menu.
+**outdated binaries**
+~~**2) Download the [SD-Content :floppy_disk:](https://github.com/tobozo/M5Stack-SD-Updater/releases/download/v0.4.1/SD-Apps-Folder.zip) folder from the release page and unzip it into the root of the SD Card.** Then put the SD Card into the M5Stack. This zip file comes preloaded with [precompiled apps](https://github.com/tobozo/M5Stack-SD-Updater/tree/master/examples/M5Stack-SD-Menu/SD-Apps) and the relative meta information for the menu.~~
 
 <br />
 
-**3) Compile and flash the `M5Stack-SD-Menu.ino` example.** <br />
+**2) Compile and flash the `M5Stack-SD-Menu.ino` example.** <br />
 This sketch is the **menu** app. It shoul reside in the root directory of a micro SD card for persistence and also executed once.
 
 Once flashed it will **copy itself** on OTA2 partition and on the SDCard, then rolled back and executed from the OTA2 partition.
@@ -82,7 +87,7 @@ Thanks to @Lovyan03 this self-propagation logic is very convenient: by residing 
 
 <br />
 
-**4) Make application sketches compatible with the SD-Updater Menu .** <br />
+**3) Make application sketches compatible with the SD-Updater Menu .** <br />
 
 
 The snippet of code in the `M5Stack-SDLoader-Snippet.ino` sketch can be used as a model to make any ESP32 sketch compatible with the SD-Updater menu.
@@ -105,6 +110,7 @@ The snippet of code in the `M5Stack-SDLoader-Snippet.ino` sketch can be used as 
  And add this after the include:
 
 ```C
+    // #define SDU_ENABLE_GZ // optional: support for gzipped firmwares
     #include <M5StackUpdater.h>
 ```
 
@@ -392,11 +398,11 @@ The default SD-Menu application will scan for these file types:
 
   - .bin compiled application binary
 
-  - .jpg image/icon (max 200x100)
+  - .jpg image/icon (max 100x100)
 
   - .json file with dimensions descriptions:
 
-  `{"width":128,"height":128,"authorName":"tobozo","projectURL":"http://short.url","credits":"** http://very.very.long.url ~~"}`
+  `{"width":120,"height":120,"authorName":"tobozo","projectURL":"http://short.url","credits":"** http://very.very.long.url ~~"}`
 
 
 <br />
@@ -449,6 +455,19 @@ This can be triggered manually by using `saveSketchToFS(SD, fileName, TFCARD_CS_
 #include "M5StackUpdater.h"
 ```
 
+- Gzipped firmwares are supported when `SDU_ENABLE_GZ` macro is defined or when [ESP32-targz.h](https://github.com/tobozo/ESP32-targz) was previously included.
+  The firmware must have the `.gz.` extension and be a valid gzip file to trigger the decompression.
+
+```C++
+#define SDU_ENABLE_GZ // enable support for gzipped firmwares
+#include "M5StackUpdater.h"
+
+void setup()
+{
+  checkSDUpdater( SD, "/menu.gz", 2000 );
+}
+```
+
 
 - The JoyPSP and [M5Stack-Faces](https://github.com/m5stack/faces) Controls for M5Stack SD Menu necessary code are now disabled in the menu example but the code stays here and can be used as a boilerplate for any other two-wires input device.
 
@@ -462,7 +481,85 @@ This can be triggered manually by using `saveSketchToFS(SD, fileName, TFCARD_CS_
 - Serial message `[ERROR] No filesystem selected` or `[ERROR] No valid filesystem selected`: try `SDUCfg.setFS( &SD )` prior to calling the SDUpdater.
 
 
-<br />
+<br /><br />
+
+
+
+🏭 Factory Partition
+--------------------
+
+Abuse the OTA partition scheme and store up to 5 applications on the flash, plus the firmware loader.
+
+⚠️ This scenario uses a special [firmware loader](https://github.com/tobozo/M5Stack-SD-Updater/tree/1.2.8/examples/M5Stack-FW-Menu) `M5Stack-FW-Menu`, a custom partition scheme, and a different integration of M5Stack-SD-Updater in the loadable applications.
+
+Although it can work without the SD Card, `M5Stack-FW-Menu` can still act as a low profile replacement for the classic SD Card `/menu.bin`, and load binaries from the SD Card or other supported filesystems.
+
+
+#### Requirements:
+
+- Flash size must be 8MB or 16MB
+- custom partitions.csv must have more than 2 OTA partitions followed by one factory partition (see annotated example below)
+- loadable applications and firmware loader must share the same custom partitions scheme at compilation
+- `SDUCfg.rollBackToFactory = true;` must be set in all loadable applications (see `Detect factory support`)
+
+#### Custom partition scheme annotated example:
+
+```csv
+# 6 Apps + Factory
+# Name,   Type, SubType,    Offset,     Size
+nvs,      data, nvs,        0x9000,   0x5000
+otadata,  data, ota,        0xe000,   0x2000
+ota_0,    0,    ota_0,     0x10000, 0x200000  ,<< Default partition for flashing (UART, 2MB)
+ota_1,    0,    ota_1,    0x210000, 0x200000  ,<< Default partition for flashing (OTA, 2MB)
+ota_2,    0,    ota_2,    0x410000, 0x200000  ,<< Application (2MB)
+ota_3,    0,    ota_3,    0x610000, 0x200000  ,<< Application (2MB)
+ota_4,    0,    ota_4,    0x810000, 0x200000  ,<< Application (2MB)
+ota_5,    0,    ota_5,    0xA10000, 0x200000  ,<< Application (2MB)
+firmware, app,  factory,  0xC10000, 0x0F0000  ,<< Factory partition holding the firmware menu (960KB)
+spiffs,   data, spiffs,   0xD00000, 0x2F0000  ,<< SPIFFS (2MB)
+coredump, data, coredump, 0xFF0000,  0x10000
+```
+
+#### Quick Start:
+
+- Set a custom partition scheme according to the requirements (see annotated example above)
+- Compile and flash the [M5Stack-FW-Menu]https://github.com/tobozo/M5Stack-SD-Updater/tree/master/examples/M5Stack-FW-Menu)
+- On first run the `M5Stack-FW-Menu` firmware loader will automatically populate the factory partition and restart from there
+
+Then for every other app you want to store on the flash:
+
+- Set the same custom partition scheme as `M5Stack-FW-Menu`
+- Add `SDUCfg.rollBackToFactory = true;` and second argument must be empty e.g. `checkSDUpdater( SD, "", 5000, TFCARD_CS_PIN )`
+- Compile your app
+- Copy the binary to the SD Card (e.g. copy the bin manually or use the `Save SD` option from the app's SD-Updater lobby)
+- Use `FW Menu` option from the app's SD-Updater lobby (note: **it should load the firmware loader, not the /menu.bin from the SD Card**)
+- Use the firmware loader menu `Manage Partitions/Add Firmware` to copy the recently added app to one of the available slots
+
+Note: the firmware loader can copy applications from any filesystem (SD, SD_MMC, SPIFFS, LittleFS, FFat).
+
+
+#### Detect factory support
+
+```cpp
+#if M5_SD_UPDATER_VERSION_INT >= VERSION_VAL(1, 2, 8)
+// New SD Updater support, requires version >=1.2.8 of https://github.com/tobozo/M5Stack-SD-Updater/
+if( Flash::hasFactoryApp() ) {
+  SDUCfg.rollBackToFactory = true;
+  SDUCfg.setLabelMenu("FW Menu");
+  SDUCfg.setLabelRollback("Save FW");
+  checkFWUpdater( 5000 );
+} else
+#endif
+{
+  checkSDUpdater( SD, MENU_BIN, 5000, TFCARD_CS_PIN );
+}
+```
+
+
+
+
+
+
 
 🛣 ROADMAP:
 ----------
@@ -500,5 +597,7 @@ This can be triggered manually by using `saveSketchToFS(SD, fileName, TFCARD_CS_
 | 👍     | QRCode              | Richard Moore    | https://github.com/ricmoo/qrcode             |
 | 👍     | @Reaper7            | Reaper7          | https://github.com/reaper7                   |
 | 👍     | @PartsandCircuits   | PartsandCircuits | https://github.com/PartsandCircuits          |
-| 👍     | @lovyan03           | らびやん           | https://github.com/lovyan03                  |
+| 👍     | @lovyan03           | らびやん           | https://github.com/lovyan03                 |
 | 👍     | @matsumo            | Matsumo          | https://github.com/matsumo                   |
+| 👍     | @riraosan           | Riraosan         | https://github.com/riraosan                  |
+| 👍     | @ockernuts          | ockernuts        | https://github.com/ockernuts                 |

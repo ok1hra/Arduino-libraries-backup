@@ -7,7 +7,7 @@ bool M5_EXTIO2::begin(TwoWire *wire, uint8_t sda, uint8_t scl, uint8_t addr) {
     _addr = addr;
     _sda  = sda;
     _scl  = scl;
-    _wire->begin(_sda, _scl);
+    _wire->begin((int)_sda, (int)_scl);
     delay(10);
     _wire->beginTransmission(_addr);
     uint8_t error = _wire->endTransmission();
@@ -61,6 +61,18 @@ bool M5_EXTIO2::setAllPinMode(extio_io_mode_t mode) {
     return true;
 }
 
+/*! @brief Set the mode of one pin.
+     @return True if the set was successful, otherwise false.. */
+bool M5_EXTIO2::setPinMode(uint8_t pin, extio_io_mode_t mode) {
+    if ((pin >= 0) && (pin <= 7)) {
+        uint8_t data[1] = {mode};
+
+        return writeBytes(_addr, EXTIO2_MODE_REG + pin, data, 1);
+    } else {
+        return false;
+    }
+}
+
 /*! @brief Set the addr of device.
     @return True if the set was successful, otherwise false.. */
 bool M5_EXTIO2::setDeviceAddr(uint8_t addr) {
@@ -85,6 +97,13 @@ uint8_t M5_EXTIO2::getVersion() {
 bool M5_EXTIO2::setDigitalOutput(uint8_t pin, uint8_t state) {
     uint8_t reg = pin + EXTIO2_OUTPUT_CTL_REG;
     return writeBytes(_addr, reg, &state, 1);
+}
+
+/*! @brief Set all digital signal output pins.
+    @return True if the set was successful, otherwise false.. */
+bool M5_EXTIO2::setAllDigitalOutputs(uint8_t pins) {
+    uint8_t reg = EXTIO2_OUTPUTS_CTL_REG;
+    return writeBytes(_addr, reg, &pins, 1);
 }
 
 /*! @brief Set the color of led lights.
@@ -116,11 +135,24 @@ bool M5_EXTIO2::setServoPulse(uint8_t pin, uint16_t pulse) {
     return writeBytes(_addr, reg, data, 2);
 }
 
-/*! @brief Get digital singal input.
-    @return True if the read was successful, otherwise false.. */
+/*! @brief Get digital signal input.
+    @return True if the pin was high, and false if the pin was low or the read
+            was unsuccessful */
 bool M5_EXTIO2::getDigitalInput(uint8_t pin) {
     uint8_t data;
     uint8_t reg = pin + EXTIO2_DIGITAL_INPUT_REG;
+    if (readBytes(_addr, reg, &data, 1)) {
+        return data;
+    }
+    return 0;
+}
+
+/*! @brief Get all digital signal inputs.
+    @return pin status 0-7 as bits of byte, or returns 0 if read is
+            unsuccessful.. */
+uint8_t M5_EXTIO2::getAllDigitalInputs(void) {
+    uint8_t data;
+    uint8_t reg = EXTIO2_DIGITAL_INPUTS_REG;
     if (readBytes(_addr, reg, &data, 1)) {
         return data;
     }

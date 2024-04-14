@@ -1,43 +1,43 @@
 #include "SHT3X.h"
 
-/* Motor()
-
-*/
-SHT3X::SHT3X(uint8_t address) {
-    Wire.begin();
-    _address = address;
+bool SHT3X::begin(TwoWire* wire, uint8_t addr, uint8_t sda, uint8_t scl,
+                  long freq) {
+    _i2c.begin(wire, sda, scl, freq);
+    _addr = addr;
+    _wire = wire;
+    return _i2c.exist(_addr);
 }
 
-byte SHT3X::get() {
+bool SHT3X::update() {
     unsigned int data[6];
 
     // Start I2C Transmission
-    Wire.beginTransmission(_address);
+    _wire->beginTransmission(_addr);
     // Send measurement command
-    Wire.write(0x2C);
-    Wire.write(0x06);
+    _wire->write(0x2C);
+    _wire->write(0x06);
     // Stop I2C transmission
-    if (Wire.endTransmission() != 0) return 1;
+    if (_wire->endTransmission() != 0) return false;
 
     delay(200);
 
     // Request 6 bytes of data
-    Wire.requestFrom(_address, (uint8_t)6);
+    _wire->requestFrom(_addr, (uint8_t)6);
 
     // Read 6 bytes of data
     // cTemp msb, cTemp lsb, cTemp crc, humidity msb, humidity lsb, humidity crc
     for (int i = 0; i < 6; i++) {
-        data[i] = Wire.read();
+        data[i] = _wire->read();
     };
 
     delay(50);
 
-    if (Wire.available() != 0) return 2;
+    if (_wire->available() != 0) return false;
 
     // Convert the data
     cTemp    = ((((data[0] * 256.0) + data[1]) * 175) / 65535.0) - 45;
     fTemp    = (cTemp * 1.8) + 32;
     humidity = ((((data[3] * 256.0) + data[4]) * 100) / 65535.0);
 
-    return 0;
+    return true;
 }

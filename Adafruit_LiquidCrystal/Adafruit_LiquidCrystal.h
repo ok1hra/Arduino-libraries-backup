@@ -6,8 +6,7 @@
 
 #include "Arduino.h"
 #include "Print.h"
-#include "utility/Adafruit_MCP23008.h"
-#include <inttypes.h>
+#include <Adafruit_MCP23X08.h>
 
 // commands
 #define LCD_CLEARDISPLAY 0x01 //!< Clear display, set cursor position to zero
@@ -118,9 +117,11 @@ public:
 
   /*!
    * @brief LiquidCrystal constructor for connection over i2c
-   * @param i2cAddr I2C address of the display
+   * @param i2cAddr Address of the display. Can use either actual I2C address
+   * (0x20, 0x21, etc.) or offset from 0x20 base address (0, 1, etc.).
+   * @param wire Optional pointer to Wire instance to use. Defaults to Wire.
    */
-  Adafruit_LiquidCrystal(uint8_t i2cAddr);
+  Adafruit_LiquidCrystal(uint8_t i2cAddr, TwoWire *wire = &Wire);
   /*!
    * @brief LiquidCrystal constructor for connection over SPI
    * @param data Data pin
@@ -156,7 +157,7 @@ public:
    * @param charsize Sets the charactersize
    * @return Returns true when connection was successful
    */
-  void begin(uint8_t cols, uint8_t rows, uint8_t charsize = LCD_5x8DOTS);
+  bool begin(uint8_t cols, uint8_t rows, uint8_t charsize = LCD_5x8DOTS);
 
   /*!
    * @brief High-level command to clear the display
@@ -218,9 +219,9 @@ public:
   /*!
    * @brief High-level command to set the backlight, only if the LCD backpack is
    * used
-   * @param status Status to set the backlight
+   * @param value Set the backlight off/on, 0 = off, >0 = on.
    */
-  void setBacklight(uint8_t status);
+  void setBacklight(uint8_t value);
 
   /*!
    * @brief High-level command that creates custom character in CGRAM
@@ -274,7 +275,8 @@ private:
   uint8_t _SPIbuff;
 
   uint8_t _i2cAddr;
-  Adafruit_MCP23008 _i2c;
+  TwoWire *_wire;
+  Adafruit_MCP23X08 _mcp;
 };
 
 #endif

@@ -1,13 +1,27 @@
 #include "../menu.h"
 
 
-void setup() {
+void setup()
+{
 
-  M5.begin(); // bool LCDEnable, bool SDEnable, bool SerialEnable, bool I2CEnable, bool ScreenShotEnable
+  #if defined __M5UNIFIED_HPP__
+    M5.Log.setEnableColor(m5::log_target_serial, false);
+  #endif
+
+  #ifdef ARDUINO_M5STACK_FIRE
+    spicommon_periph_free( VSPI_HOST ); // fix 2.0.4 psramInit mess
+  #endif
+
+  #if defined(ARDUINO_M5STACK_ATOM_AND_TFCARD)
+    SDUCfg.setDisplay(&tft);
+    tft.init();
+  #else
+    M5.begin(); // bool LCDEnable, bool SDEnable, bool SerialEnable, bool I2CEnable, bool ScreenShotEnable
+  #endif
+
 
   SDUCfg.setFS( &M5_FS );
   SDUCfg.setCSPin( TFCARD_CS_PIN );
-  sdUpdater = new SDUpdater();
 
   //WiFi.onEvent(WiFiEvent); // helps debugging WiFi problems with the Serial console
   UISetup(); // UI init and check if a SD exists

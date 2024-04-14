@@ -29,7 +29,7 @@
  */
 
 
-extern SDUpdater *sdUpdater; // used for menu progress
+//extern SDUpdater *sdUpdater; // used for menu progress
 //static const char* sduFSFilePath( fs::File *file );
 
 
@@ -58,7 +58,11 @@ const String appRegistryDefaultName = "default.json";
 
 bool isBinFile( const char* fileName )
 {
-  return String( fileName ).endsWith( ".bin" ) || String( fileName ).endsWith( ".BIN" );
+  return String( fileName ).endsWith( ".bin" ) || String( fileName ).endsWith( ".BIN" )
+  #if defined SDU_HAS_TARGZ
+      || String( fileName ).endsWith( ".gz" ) // || String( fileName ).endsWith( ".tar.gz" )
+  #endif
+  ;
 }
 
 bool isValidAppName( const char* fileName )
@@ -96,6 +100,23 @@ bool iFile_exists( fs::FS *fs, String &fname )
 }
 
 
+
+enum FileSystem_src_t
+{
+  SRC_NONE,
+  SRC_SD,
+  SRC_SPIFFS,
+  SRC_LITTLEFS,
+  SRC_FLASH
+};
+
+struct FileSystem_fs_t
+{
+  FileSystem_src_t src{SRC_NONE};
+  fs::FS* fs{nullptr};
+};
+
+
 /* Storing json meta file information r */
 struct JSONMeta
 {
@@ -115,20 +136,25 @@ struct FileInfo
   String iconName;  // a jpeg image representing the binary
   String faceName;  // a jpeg image representing the author
   uint32_t fileSize;
-  String displayName() {
+  FileSystem_fs_t srcfs; // meta is implicitely on default FS but firmware can be on flash!
+
+  String displayName()
+  {
     String out = fileName.substring(1);
     out.replace( ".bin", "" );
     out.replace( ".BIN", "" );; // the binary name, without the file extension and the leading slash
     return out;
   }
-  String shortName() {
+  String shortName()
+  {
     String out = displayName();
     if( out.startsWith("--") ) {
       out.replace("--", "");
     }
     return out;
   }
-  bool hasIcon() {
+  bool hasIcon()
+  {
     String currentIconFile = shortName();
     currentIconFile = "/jpg/" + shortName() + ".jpg";
     if( iFile_exists( &M5_FS, currentIconFile ) ) {
@@ -138,7 +164,8 @@ struct FileInfo
     log_d("[JSON]: no currentIconFile %s", currentIconFile.c_str() );
     return false;
   }
-  bool hasFace() {
+  bool hasFace()
+  {
     String currentIconFile = shortName();
     currentIconFile = "/jpg/" + shortName() + "_gh.jpg";
     if( iFile_exists( &M5_FS, currentIconFile ) ) {
@@ -152,7 +179,8 @@ struct FileInfo
     log_d("[JSON]: no currentIconFile %s", currentIconFile.c_str() );
     return false;
   }
-  bool hasMeta() {
+  bool hasMeta()
+  {
     String currentMetaFile = shortName();
     if( currentMetaFile.startsWith("/--") ) {
       currentMetaFile.replace("--", "");
@@ -217,7 +245,7 @@ void getFileInfo( FileInfo &fileInfo, File *file, const char* binext=".bin" )
 {
   String BINEXT = binext;
   BINEXT.toUpperCase();
-  String fileName   = sdUpdater->fs_file_path( file ); //.name();
+  String fileName   = SDUpdater::fs_file_path( file ); //.name();
   uint32_t fileSize = file->size();
   time_t lastWrite = file->getLastWrite();
   struct tm * tmstruct = localtime(&lastWrite);
@@ -238,9 +266,16 @@ void getFileInfo( FileInfo &fileInfo, File *file, const char* binext=".bin" )
     fileInfo.faceName = fileInfo.iconName;
   }
 
+  fileName.replace( binext, "" );
+  fileName.replace( BINEXT, "" );
+
+  #if defined SDU_HAS_TARGZ
+    fileName.replace( ".gz", "" );
+    //fileName.replace( ".tar.gz", "" );
+  #endif
+
   String currentDataFolder = appDataFolder + fileName;
-  currentDataFolder.replace( binext, "" );
-  currentDataFolder.replace( BINEXT, "" );
+
   if( M5_FS.exists( currentDataFolder.c_str() ) ) {
     fileInfo.hasData = true; // TODO: actually use this feature
   }
@@ -251,10 +286,7 @@ void getFileInfo( FileInfo &fileInfo, File *file, const char* binext=".bin" )
 }
 
 
-/*
- *  Scan SPIFFS for binaries and move them onto the SD Card
- *  TODO: create an app manager for the SD Card
- */
+
 void scanDataFolder()
 {
   // check if mandatory folders exists and create if necessary
@@ -385,19 +417,23 @@ bool replaceLauncher( fs::FS &fs, FileInfo &info)
   return true;
 }
 
-FileInfo *fileInfo = nullptr;
+
+
+std::vector<FileInfo> fileInfo;
+
+//FileInfo *fileInfo = nullptr;
 
 void initFileInfo()
 {
-  if( psramInit() ) {
-    fileInfo = (FileInfo *)ps_calloc( M5SAM_LIST_MAX_COUNT, sizeof(FileInfo) );
-  } else {
-    fileInfo = (FileInfo *)calloc( M5SAM_LIST_MAX_COUNT, sizeof(FileInfo) );
-  }
-  if( fileInfo == NULL ) {
-    log_n("[CRITICAL] Failed to allocate %d bytes!! Set a lower value to M5SAM_LIST_MAX_COUNT in SAM.h to prevent this. Halting...", sizeof(FileInfo)*M5SAM_LIST_MAX_COUNT );
-    while(1) vTaskDelay(1);
-  }
+  // if( psramInit() ) {
+  //   fileInfo = (FileInfo *)ps_calloc( M5SAM_LIST_MAX_COUNT, sizeof(FileInfo) );
+  // } else {
+  //   fileInfo = (FileInfo *)calloc( M5SAM_LIST_MAX_COUNT, sizeof(FileInfo) );
+  // }
+  // if( fileInfo == NULL ) {
+  //   log_n("[CRITICAL] Failed to allocate %d bytes!! Set a lower value to M5SAM_LIST_MAX_COUNT in SAM.h to prevent this. Halting...", sizeof(FileInfo)*M5SAM_LIST_MAX_COUNT );
+  //   while(1) vTaskDelay(1);
+  // }
 }
 
 
