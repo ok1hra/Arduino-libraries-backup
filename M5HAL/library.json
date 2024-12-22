@@ -1,0 +1,25 @@
+{
+    "name": "M5HAL",
+    "description": "Hardware Abstraction Layer(HAL) for M5 Products",
+    "keywords": "M5HAL",
+    "authors": {
+        "name": "M5Stack",
+        "url": "http://www.m5stack.com"
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/m5stack/M5HAL.git"
+    },
+    "dependencies": [],
+    "version": "0.0.1",
+    "frameworks": [
+        "arduino",
+        "espidf",
+        "*"
+    ],
+    "platforms": [
+        "espressif32"
+    ],
+    "headers": "M5HAL.hpp",
+    "license": "MIT"
+}

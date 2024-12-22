@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include <catch.hpp>
 
+#include "Literals.hpp"
+
 TEST_CASE("JsonVariantConst::operator[]") {
   JsonDocument doc;
   JsonVariantConst var = doc.to<JsonVariant>();
@@ -27,31 +29,43 @@ TEST_CASE("JsonVariantConst::operator[]") {
     array.add("A");
     array.add("B");
 
-    REQUIRE(std::string("A") == var[0]);
-    REQUIRE(std::string("B") == var[1]);
-    REQUIRE(std::string("A") ==
-            var[static_cast<unsigned char>(0)]);  // issue #381
-    REQUIRE(var[666].isNull());
-    REQUIRE(var[3].isNull());
-    REQUIRE(var["0"].isNull());
+    SECTION("int") {
+      REQUIRE("A"_s == var[0]);
+      REQUIRE("B"_s == var[1]);
+      REQUIRE("A"_s == var[static_cast<unsigned char>(0)]);  // issue #381
+      REQUIRE(var[666].isNull());
+      REQUIRE(var[3].isNull());
+    }
+
+    SECTION("const char*") {
+      REQUIRE(var["0"].isNull());
+    }
+
+    SECTION("JsonVariant") {
+      array.add(1);
+      REQUIRE(var[var[2]] == "B"_s);
+      REQUIRE(var[var[3]].isNull());
+    }
   }
 
   SECTION("object") {
     JsonObject object = doc.to<JsonObject>();
-    object["a"] = "A";
-    object["b"] = "B";
+    object["ab"_s] = "AB";
+    object["abc"_s] = "ABC";
+    object["abc\0d"_s] = "ABCD";
 
     SECTION("supports const char*") {
-      REQUIRE(std::string("A") == var["a"]);
-      REQUIRE(std::string("B") == var["b"]);
-      REQUIRE(var["c"].isNull());
+      REQUIRE(var["ab"] == "AB"_s);
+      REQUIRE(var["abc"] == "ABC"_s);
+      REQUIRE(var["def"].isNull());
       REQUIRE(var[0].isNull());
     }
 
     SECTION("supports std::string") {
-      REQUIRE(std::string("A") == var[std::string("a")]);
-      REQUIRE(std::string("B") == var[std::string("b")]);
-      REQUIRE(var[std::string("c")].isNull());
+      REQUIRE(var["ab"_s] == "AB"_s);
+      REQUIRE(var["abc"_s] == "ABC"_s);
+      REQUIRE(var["abc\0d"_s] == "ABCD"_s);
+      REQUIRE(var["def"_s].isNull());
     }
 
 #if defined(HAS_VARIABLE_LENGTH_ARRAY) && \
@@ -59,10 +73,23 @@ TEST_CASE("JsonVariantConst::operator[]") {
     SECTION("supports VLA") {
       size_t i = 16;
       char vla[i];
-      strcpy(vla, "a");
+      strcpy(vla, "abc");
 
-      REQUIRE(std::string("A") == var[vla]);
+      REQUIRE(var[vla] == "ABC"_s);
     }
 #endif
+
+    SECTION("supports JsonVariant") {
+      object["key1"] = "ab";
+      object["key2"] = "abc";
+      object["key3"] = "abc\0d"_s;
+      object["key4"] = "foo";
+
+      REQUIRE(var[var["key1"]] == "AB"_s);
+      REQUIRE(var[var["key2"]] == "ABC"_s);
+      REQUIRE(var[var["key3"]] == "ABCD"_s);
+      REQUIRE(var[var["key4"]].isNull());
+      REQUIRE(var[var["key5"]].isNull());
+    }
   }
 }

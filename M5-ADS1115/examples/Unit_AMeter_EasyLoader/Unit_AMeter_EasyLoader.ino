@@ -17,15 +17,20 @@ Updated by Bodmer for variable meter size
 // M5.Lcd.rotation(1)
 #define M_SIZE 1.3333
 
-#include <M5Core2.h>
+#include <M5Unified.h>
 #include <Wire.h>
-#include "ammeter.h"
+#include "M5_ADS1115.h"
 
-Ammeter ammeter;
+#define M5_UNIT_AMETER_I2C_ADDR             0x48
+#define M5_UNIT_AMETER_EEPROM_I2C_ADDR      0x51
+#define M5_UNIT_AMETER_PRESSURE_COEFFICIENT 0.05
 
-float page512_volt = 2000.0F;
+ADS1115 Ameter;
 
-ammeterGain_t now_gain = PAG_512;
+float resolution         = 0.0;
+float calibration_factor = 0.0;
+
+float pgae512_volt = 2000.0F;
 
 #define TFT_GREY 0x5AEB
 
@@ -39,19 +44,29 @@ int value[6]     = {0, 0, 0, 0, 0, 0};
 int old_value[6] = {-1, -1, -1, -1, -1, -1};
 int d            = 0;
 
+void plotNeedle(int value, byte ms_delay);
+void analogMeter();
+
 void setup(void) {
     M5.begin();
-    Wire.begin();
+    while (!Ameter.begin(&Wire, M5_UNIT_AMETER_I2C_ADDR, 32, 33, 400000U)) {
+        Serial.println("Unit Ameter Init Fail");
+        delay(1000);
+    }
+    Ameter.setEEPROMAddr(M5_UNIT_AMETER_EEPROM_I2C_ADDR);
+    Ameter.setMode(ADS1115_MODE_SINGLESHOT);
+    Ameter.setRate(ADS1115_RATE_8);
+    Ameter.setGain(ADS1115_PGA_512);
+    // | PGA      | Max Input Voltage(V) |
+    // | PGA_6144 |        128           |
+    // | PGA_4096 |        64            |
+    // | PGA_2048 |        32            |
+    // | PGA_512  |        16            |
+    // | PGA_256  |        8             |
 
-    ammeter.setMode(SINGLESHOT);
-    ammeter.setRate(RATE_8);
-    ammeter.setGain(PAG_512);
-    // | PAG      | Max Input Voltage(V) |
-    // | PAG_6144 |        128           |
-    // | PAG_4096 |        64            |
-    // | PAG_2048 |        32            |
-    // | PAG_512  |        16            |
-    // | PAG_256  |        8             |
+    resolution = Ameter.getCoefficient() / M5_UNIT_AMETER_PRESSURE_COEFFICIENT;
+    calibration_factor = Ameter.getFactoryCalibration();
+
     M5.Lcd.fillScreen(TFT_BLACK);
 
     analogMeter();  // Draw analogue meter
@@ -63,7 +78,12 @@ void loop() {
     if (updateTime <= millis()) {
         updateTime = millis() + 35;  // Update emter every 35 milliseconds
 
-        float current = ammeter.getCurrent();
+        int16_t adc_raw = Ameter.getSingleConversion();
+        float current   = adc_raw * resolution * calibration_factor;
+        Serial.printf("Cal ADC:%.0f\n", adc_raw * calibration_factor);
+        Serial.printf("Cal Current:%.2f mA\n", current);
+        Serial.printf("Raw ADC:%d\n\n", adc_raw);
+
         M5.Lcd.setCursor(0, 200);
         M5.Lcd.setTextFont(4);
         M5.Lcd.setTextColor(WHITE, BLACK);

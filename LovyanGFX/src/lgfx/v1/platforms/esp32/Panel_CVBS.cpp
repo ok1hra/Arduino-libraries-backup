@@ -28,7 +28,6 @@ Inspiration Sources:
 #include <freertos/task.h>
 #include <esp_types.h>
 #include <esp_log.h>
-#include <driver/dac.h>
 #include <soc/rtc.h>
 #include <soc/periph_defs.h>
 #include <soc/i2s_struct.h>
@@ -46,9 +45,16 @@ Inspiration Sources:
 #if __has_include(<driver/i2s_std.h>)
  #include <driver/i2s_std.h>
  #define LGFX_I2S_STD_ENABLED
+ #if __has_include (<hal/dac_ll.h>)
+  #include <hal/dac_types.h>
+  #include <hal/dac_ll.h>
+  #include <driver/rtc_io.h>
+ #endif
 #else
  #include <driver/i2s.h>
+ #include <driver/dac.h>
 #endif
+
 #if __has_include(<esp_private/periph_ctrl.h>)
  // ESP-IDF v5
  #include <esp_private/periph_ctrl.h>
@@ -217,7 +223,6 @@ namespace lgfx
 // この両者を合わせて 147+45=192 を引いた値が基準位相となる。;
 // つまり 360-192 = 168度を基準とする。;
     static constexpr float BASE_RAD = (M_PI * 168) / 180; // 2.932153;
-    uint8_t buf[4];
 
     uint32_t r = rgb >> 16;
     uint32_t g = (rgb >> 8) & 0xFF;
@@ -231,10 +236,33 @@ namespace lgfx
     float phase_offset = atan2f(i, q) + BASE_RAD;
     float saturation = sqrtf(i * i + q * q) * chroma_scale;
     saturation = saturation * satuation_base;
+
+    uint8_t buf[4];
+    uint8_t frac[4];
+    int frac_total = 0;
     for (int j = 0; j < 4; j++)
     {
-      int tmp = ((int)(128.5f + y + sinf(phase_offset + (float)M_PI / 2 * j) * saturation)) >> 8;
+      int tmp = ((int)(y + sinf(phase_offset + (float)M_PI / 2 * j) * saturation));
+      frac[j] = tmp & 0xFF;
+      frac_total += frac[j];
+      tmp >>= 8;
       buf[j] = tmp < 0 ? 0 : tmp > 255 ? 255 : tmp;
+    }
+    // 切り捨てた端数分を補正する
+    while (frac_total > 128)
+    {
+      frac_total -= 256;
+      int target_idx = 0;
+      const uint8_t idxtbl[] = { 0, 2, 1, 3 };
+      for (int j = 1; j < 4; j++)
+      {
+        if (frac[idxtbl[j]] > frac[target_idx] || frac[target_idx] == 255) {
+          target_idx = idxtbl[j];
+        }
+      }
+      if (buf[target_idx] == 255) { break; }
+      buf[target_idx]++;
+      frac[target_idx] = 0;
     }
     // I2Sに渡す際に処理負荷を軽減できるよう、予めバイトスワップ等を行ったテーブルを作成しておく;
     return buf[0] << 24
@@ -315,15 +343,43 @@ namespace lgfx
     u *= chroma_scale;
     v *= chroma_scale;
 
+    uint8_t frac[8];
+    int frac_total[2] = {0,0};
+
     for (int j = 0; j < 4; j++)
     {
       float s = u * sin_tbl[j    ];
       float c = v * sin_tbl[j + 1]; // cos
-      int tmp = ((int)(128.5f + y + s + c)) >> 8;
       int i = idx_tbl[j];
+      int tmp = ((int)(y + s + c));
+      frac[i  ] = tmp & 0xFF;
+      frac_total[0] += frac[i  ];
+      tmp >>= 8;
       result[i  ] = tmp < 0 ? 0 : tmp > 255 ? 255 : tmp;
-      tmp = ((int)(128.5f + y + s - c)) >> 8;
-      result[i+4] = tmp < 0 ? 0 : tmp > 255 ? 255 : tmp;
+      tmp = ((int)(y + s - c));
+      i += 4;
+      frac[i] = tmp & 0xFF;
+      frac_total[1] += frac[i];
+      tmp >>= 8;
+      result[i] = tmp < 0 ? 0 : tmp > 255 ? 255 : tmp;
+    }
+
+    // 切り捨てた端数分を補正する
+    for (int i = 0; i < 2; ++i) {
+      while (frac_total[i] > 128)
+      {
+        frac_total[i] -= 256;
+        int target_idx = i*4;
+        for (int j = 1; j < 4; j++)
+        {
+          if (frac[j+i*4] > frac[target_idx] || frac[target_idx] == 255) {
+            target_idx = j+i*4;
+          }
+        }
+        if (result[target_idx] == 255) { break; }
+        result[target_idx]++;
+        frac[target_idx] = 0;
+      }
     }
   }
 
@@ -1871,6 +1927,16 @@ namespace lgfx
     deinit();
   }
 
+  static dac_channel_t _get_dacchannel(int pin) {
+#if !defined (ESP_IDF_VERSION_VAL)
+    return (pin == 25) ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
+#elif ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 1, 0)
+    return (pin == 25) ? DAC_CHANNEL_1 : DAC_CHANNEL_2;
+#else
+    return (pin == 25) ? DAC_CHAN_0 : DAC_CHAN_1;
+#endif
+  }
+
   void Panel_CVBS::deinit(void)
   {
     if (_started)
@@ -1896,25 +1962,21 @@ namespace lgfx
       I2S0.out_link.start = 0;
       I2S0.conf.tx_start = 0;
 
+#if defined ( LGFX_I2S_STD_ENABLED )
+      dac_ll_digi_enable_dma(false);
+      auto ch = _get_dacchannel(_config_detail.pin_dac);
+      dac_ll_power_down(ch);
+#else
       dac_i2s_disable();
-      switch (_config_detail.pin_dac)
-      {
-      default:
-        break;
-      case 25:
-        dac_output_disable(DAC_CHANNEL_1); // for GPIO 25
-        break;
-      case 26:
-        dac_output_disable(DAC_CHANNEL_2); // for GPIO 26
-        break;
-      }
-
+      auto ch = _get_dacchannel(_config_detail.pin_dac);
+      dac_output_disable(ch);
+#endif
       periph_module_disable(PERIPH_I2S0_MODULE);
 
 #if defined ( LGFX_I2S_STD_ENABLED )
-    rtc_clk_apll_enable(false);
+      rtc_clk_apll_enable(false);
 #else
-    rtc_clk_apll_enable(false,0,0,0,1);
+      rtc_clk_apll_enable(false,0,0,0,1);
 #endif
 
 // printf("dmabuf: %08x free\n", internal.dma_desc[0].buf);
@@ -1943,22 +2005,40 @@ namespace lgfx
     {
       return true;
     }
-    _started = true;
-
-    dac_i2s_enable();
-    switch (_config_detail.pin_dac)
+    if (_config_detail.pin_dac != GPIO_NUM_25 && _config_detail.pin_dac != GPIO_NUM_26)
     {
-    default:
       ESP_LOGE(TAG, "DAC output gpio error: G%d  ... Select G25 or G26.", _config_detail.pin_dac);
       return false;
-    case 25:
-      dac_output_enable(DAC_CHANNEL_1); // for GPIO 25
-      break;
-    case 26:
-      dac_output_enable(DAC_CHANNEL_2); // for GPIO 26
-      break;
     }
+    _started = true;
 
+#if defined ( LGFX_I2S_STD_ENABLED )
+    { static constexpr const gpio_num_t gpio_table[2] = { GPIO_NUM_25, GPIO_NUM_26 }; // for ESP32 (not ESP32S2, s2=gpio17,gpio18)
+      for (int i = 0; i < 2; ++i)
+      {
+        if (_config_detail.pin_dac != gpio_table[i]) { continue; }
+        auto gpio_num = gpio_table[i];
+        rtc_gpio_init(gpio_num);
+        rtc_gpio_set_direction(gpio_num, RTC_GPIO_MODE_DISABLED);
+        rtc_gpio_pullup_dis(gpio_num);
+        rtc_gpio_pulldown_dis(gpio_num);
+
+        auto channel = _get_dacchannel(gpio_num);
+        dac_ll_power_on(channel);
+      }
+      dac_ll_rtc_sync_by_adc(false);
+      dac_ll_digi_enable_dma(true);
+
+      I2S0.conf2.lcd_en = true;
+      I2S0.conf.tx_right_first = false;
+      I2S0.conf.tx_msb_shift = 0;
+      I2S0.conf.tx_short_sync = 0;
+    }
+#else
+    dac_i2s_enable();
+    auto ch = _get_dacchannel(_config_detail.pin_dac);
+    dac_output_enable(ch);
+#endif
     if (_config_detail.signal_type >= config_detail_t::signal_type_t::signal_type_max)
     {
       _config_detail.signal_type = (config_detail_t::signal_type_t)0;

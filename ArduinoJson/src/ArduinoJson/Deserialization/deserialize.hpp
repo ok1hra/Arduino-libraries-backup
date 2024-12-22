@@ -24,15 +24,10 @@ struct first_or_void<T, Rest...> {
 
 // A meta-function that returns true if T is a valid destination type for
 // deserialize()
-template <class T, class = void>
-struct is_deserialize_destination : false_type {};
-
 template <class T>
-struct is_deserialize_destination<
-    T, typename enable_if<is_same<decltype(VariantAttorney::getResourceManager(
-                                      detail::declval<T&>())),
-                                  ResourceManager*>::value>::type> : true_type {
-};
+using is_deserialize_destination =
+    bool_constant<is_base_of<JsonDocument, remove_cv_t<T>>::value ||
+                  IsVariant<T>::value>;
 
 template <typename TDestination>
 inline void shrinkJsonDocument(TDestination&) {
@@ -62,8 +57,8 @@ DeserializationError doDeserialize(TDestination&& dst, TReader reader,
 
 template <template <typename> class TDeserializer, typename TDestination,
           typename TStream, typename... Args,
-          typename = typename enable_if<  // issue #1897
-              !is_integral<typename first_or_void<Args...>::type>::value>::type>
+          typename = enable_if_t<  // issue #1897
+              !is_integral<typename first_or_void<Args...>::type>::value>>
 DeserializationError deserialize(TDestination&& dst, TStream&& input,
                                  Args... args) {
   return doDeserialize<TDeserializer>(
@@ -73,7 +68,7 @@ DeserializationError deserialize(TDestination&& dst, TStream&& input,
 
 template <template <typename> class TDeserializer, typename TDestination,
           typename TChar, typename Size, typename... Args,
-          typename = typename enable_if<is_integral<Size>::value>::type>
+          typename = enable_if_t<is_integral<Size>::value>>
 DeserializationError deserialize(TDestination&& dst, TChar* input,
                                  Size inputSize, Args... args) {
   return doDeserialize<TDeserializer>(dst, makeReader(input, size_t(inputSize)),

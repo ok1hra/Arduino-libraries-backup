@@ -33,8 +33,9 @@
 
 UNIT_4RELAY relay;
 
-void setup() {
-    M5.begin();  // Init M5Atom.  初始化 M5Atom
+void setup()
+{
+    M5.begin(true, false, false);  // Init M5Atom.  初始化 M5Atom
     Serial.print(relay.begin(&Wire, 26, 32));
     relay.Init(1);  // Set the lamp and relay to synchronous mode(Async =
                     // 0,Sync = 1).  将灯和继电器设为同步模式
@@ -44,11 +45,12 @@ void setup() {
 
 char count_i = 0;
 
-void loop() {
-    relay.relayAll(1);
-    delay(1000);
-    relay.relayAll(0);
-    delay(1000);
+void loop()
+{
+    // relay.relayAll(1);
+    // delay(1000);
+    // relay.relayAll(0);
+    // delay(1000);
 
     if (M5.Btn.wasPressed()) {  // If button A is pressed.  如果按键A按下
         if ((count_i < 4)) {    // Control relays turn on/off in sequence.

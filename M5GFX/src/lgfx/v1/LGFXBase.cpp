@@ -19,7 +19,7 @@ Contributors:
 #include "LGFXBase.hpp"
 
 #include "../internal/limits.h"
-#include "../utility/miniz.h"
+#include "../utility/lgfx_miniz.h"
 #include "../utility/lgfx_pngle.h"
 #include "../utility/lgfx_qrcode.h"
 #include "../utility/lgfx_tjpgd.h"
@@ -986,7 +986,7 @@ namespace lgfx
   {
     const bool is_circle = (ax==bx && ay==by /*&& ar==br*/ );
     if( !gradient.colors || gradient.count==0 ) return; // line needs at least one color
-    if ( (ar < 0.0) || (br < 0.0) ) return; // don't negociate with infinity
+    if ( (ar < 0.0f) || (br < 0.0f) ) return; // don't negociate with infinity
     if ( (fabsf(ax - bx) < 0.01f) && (fabsf(ay - by) < 0.01f) ) bx += 0.01f; // Avoid divide by zero
     // convert first gradient color to RGB
     rgb888_t fg_color = gradient.colors[0];
@@ -1011,7 +1011,7 @@ namespace lgfx
 
     float rdt = ar - br; // Radius delta
     float alpha = 1.0f; // base alpha
-    ar += 0.5; // center pixel
+    ar += 0.5f; // center pixel
     // line distance including rounded edges
     float linedist = is_circle? (ar + br)*.5f : pixelDistance(ax, ay, bx, by) + ar + br;
     float xpax, ypay, bax = bx - ax, bay = by - ay;
@@ -1125,7 +1125,7 @@ namespace lgfx
     for( int ys=0;ys<h;ys++ ) {
       if( is_vertical ) { // scanline is used as an colors index
         setColor(color888(scanline[ys].r, scanline[ys].g, scanline[ys].b));
-        drawFastHLine( x, ys, w );
+        drawFastHLine( x, y+ys, w );
       } else { // scanline is used as a line buffer
         pushImage( x, y+ys, w, 1, scanline );
       }
@@ -1441,6 +1441,27 @@ namespace lgfx
     endWrite();
   }
 
+  void LGFXBase::pushAlphaImage(int32_t x, int32_t y, int32_t w, int32_t h, pixelcopy_t *param)
+  {
+    uint32_t x_mask = 7 >> (param->src_bits >> 1);
+    param->src_bitwidth = (w + x_mask) & (~x_mask);
+
+    int32_t dx=0, dw=w;
+    if (0 < _clip_l - x) { dx = _clip_l - x; dw -= dx; x = _clip_l; }
+
+    if (_adjust_width(x, dx, dw, _clip_l, _clip_r - _clip_l + 1)) return;
+    param->src_x32 = param->src_x32_add * dx;
+
+    int32_t dy=0, dh=h;
+    if (0 < _clip_t - y) { dy = _clip_t - y; dh -= dy; y = _clip_t; }
+    if (_adjust_width(y, dy, dh, _clip_t, _clip_b - _clip_t + 1)) return;
+    param->src_y = dy;
+
+    startWrite();
+    _panel->writeImageARGB(x, y, dw, dh, param);
+    endWrite();
+  }
+
   void LGFXBase::make_rotation_matrix(float* result, float dst_x, float dst_y, float src_x, float src_y, float angle, float zoom_x, float zoom_y)
   {
     float rad = fmodf(angle, 360) * deg_to_rad;
@@ -1510,15 +1531,15 @@ namespace lgfx
     else
     if (pc_post.dst_bits > 16) {
       if (dst_depth == rgb888_3Byte) {
-        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<bgr888_t>;
+        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<bgr888_t, argb8888_t>;
       } else {
-        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<bgr666_t>;
+        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<bgr666_t, argb8888_t>;
       }
     } else {
       if (dst_depth == rgb565_2Byte) {
-        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<swap565_t>;
+        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<swap565_t, argb8888_t>;
       } else { // src_depth == rgb332_1Byte:
-        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<rgb332_t>;
+        pc_post.fp_copy = pixelcopy_t::blend_rgb_fast<rgb332_t, argb8888_t>;
       }
     }
     push_image_affine_aa(matrix, pc, &pc_post);
@@ -2554,7 +2575,7 @@ namespace lgfx
 
 //----------------------------------------------------------------------------
 
-  void LGFXBase::qrcode(const char *string, int32_t x, int32_t y, int32_t w, uint8_t version) {
+  void LGFXBase::qrcode(const char *string, int32_t x, int32_t y, int32_t w, uint8_t version, bool margin) {
     if (w == -1) {
       w = std::min(width(), height()) * 9 / 10;
     }
@@ -2571,6 +2592,16 @@ namespace lgfx
       int_fast16_t thickness = w / qrcode.size;
       int_fast16_t lineLength = qrcode.size * thickness;
       int_fast16_t offset = (w - lineLength) >> 1;
+
+      if(margin) {
+        int_fast16_t mlen = thickness * 4; // Need 4 cell or greater margin
+        if(offset < mlen) {
+          thickness = (w - (mlen << 1)) / qrcode.size;
+          lineLength = qrcode.size * thickness;
+          offset = (w - lineLength) >> 1;
+        }
+      }
+
       startWrite();
       writeFillRect(x, y, w, offset, TFT_WHITE);
       int_fast16_t dy = y + offset;

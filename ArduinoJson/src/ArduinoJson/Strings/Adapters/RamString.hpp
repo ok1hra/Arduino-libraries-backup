@@ -41,18 +41,6 @@ class ZeroTerminatedRamString {
     return str_;
   }
 
-  friend int stringCompare(ZeroTerminatedRamString a,
-                           ZeroTerminatedRamString b) {
-    ARDUINOJSON_ASSERT(!a.isNull());
-    ARDUINOJSON_ASSERT(!b.isNull());
-    return ::strcmp(a.str_, b.str_);
-  }
-
-  friend bool stringEquals(ZeroTerminatedRamString a,
-                           ZeroTerminatedRamString b) {
-    return stringCompare(a, b) == 0;
-  }
-
   bool isLinked() const {
     return false;
   }
@@ -62,8 +50,8 @@ class ZeroTerminatedRamString {
 };
 
 template <typename TChar>
-struct StringAdapter<TChar*, typename enable_if<IsChar<TChar>::value>::type> {
-  typedef ZeroTerminatedRamString AdaptedString;
+struct StringAdapter<TChar*, enable_if_t<IsChar<TChar>::value>> {
+  using AdaptedString = ZeroTerminatedRamString;
 
   static AdaptedString adapt(const TChar* p) {
     return AdaptedString(reinterpret_cast<const char*>(p));
@@ -71,8 +59,8 @@ struct StringAdapter<TChar*, typename enable_if<IsChar<TChar>::value>::type> {
 };
 
 template <typename TChar, size_t N>
-struct StringAdapter<TChar[N], typename enable_if<IsChar<TChar>::value>::type> {
-  typedef ZeroTerminatedRamString AdaptedString;
+struct StringAdapter<TChar[N], enable_if_t<IsChar<TChar>::value>> {
+  using AdaptedString = ZeroTerminatedRamString;
 
   static AdaptedString adapt(const TChar* p) {
     return AdaptedString(reinterpret_cast<const char*>(p));
@@ -90,7 +78,7 @@ class StaticStringAdapter : public ZeroTerminatedRamString {
 
 template <>
 struct StringAdapter<const char*, void> {
-  typedef StaticStringAdapter AdaptedString;
+  using AdaptedString = StaticStringAdapter;
 
   static AdaptedString adapt(const char* p) {
     return AdaptedString(p);
@@ -131,9 +119,8 @@ class SizedRamString {
 };
 
 template <typename TChar>
-struct SizedStringAdapter<TChar*,
-                          typename enable_if<IsChar<TChar>::value>::type> {
-  typedef SizedRamString AdaptedString;
+struct SizedStringAdapter<TChar*, enable_if_t<IsChar<TChar>::value>> {
+  using AdaptedString = SizedRamString;
 
   static AdaptedString adapt(const TChar* p, size_t n) {
     return AdaptedString(reinterpret_cast<const char*>(p), n);

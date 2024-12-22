@@ -185,19 +185,19 @@ public:
     // so we have to spit the command into two bytes and
     // have to read from I2C two times with EXPECTED_DATA_SIZE / 2
 
-    // Upper byte is T for SHT2x Sensors
-    cmd[0] = mI2cCommand >> 8;
-    // Lower byte is RH for SHT2x Sensors
-    cmd[1] = mI2cCommand & 0xff;
-
     // read T from SHT2x Sensor
+    // Upper byte of 'mI2cCommand' is T for SHT2x Sensors
+    cmd[0] = mI2cCommand >> 8;
     if (!readFromI2c(mWire, mI2cAddress, cmd, mCmd_Size, data,
                      EXPECTED_DATA_SIZE / 2, mDuration)) {
       DEBUG_SHT("SHT2x readFromI2c(T) false\n");
       return false;
     }
+    
     // read RH from SHT2x Sensor
-    if (!readFromI2c(mWire, mI2cAddress, &cmd[1], mCmd_Size, &data[3],
+    // Lower byte of 'mI2cCommand' is RH for SHT2x Sensors
+    cmd[0] = mI2cCommand & 0xff;
+    if (!readFromI2c(mWire, mI2cAddress, cmd, mCmd_Size, &data[3],
                      EXPECTED_DATA_SIZE / 2, mDuration)) {
       DEBUG_SHT("SHT2x readFromI2c(RH) false\n");
       return false;

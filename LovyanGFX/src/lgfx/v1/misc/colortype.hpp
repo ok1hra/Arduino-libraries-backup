@@ -29,6 +29,8 @@ namespace lgfx
 {
  inline namespace v1
  {
+# pragma GCC diagnostic push
+# pragma GCC diagnostic ignored "-Warray-bounds"
 //----------------------------------------------------------------------------
 
 #if defined ( _MSVC_LANG )
@@ -936,9 +938,18 @@ namespace lgfx
     uint_fast16_t _b8a;
   };
 
+
+  struct colors_t
+  {
+    const rgb888_t *colors;
+    const uint32_t count;
+  };
+
+
 //----------------------------------------------------------------------------
 #undef LGFX_INLINE
 
+# pragma GCC diagnostic pop
  }
 }
 

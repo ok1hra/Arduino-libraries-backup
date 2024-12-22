@@ -55,21 +55,21 @@ bool SHT4X::update() {
         duration = 110;
     }
 
-    if (!_i2c.writeByte(_addr, cmd, 1)) {
-        return false;
-    }
+    _i2c.writeByte(_addr, cmd, 1);
 
     delay(duration);
 
     _wire->requestFrom(_addr, (uint8_t)6);
 
+    Serial.println();
     for (uint16_t i = 0; i < 6; i++) {
         readbuffer[i] = _wire->read();
     }
 
     if (readbuffer[2] != crc8(readbuffer, 2) ||
-        readbuffer[5] != crc8(readbuffer + 3, 2))
+        readbuffer[5] != crc8(readbuffer + 3, 2)) {
         return false;
+    }
 
     float t_ticks  = (uint16_t)readbuffer[0] * 256 + (uint16_t)readbuffer[1];
     float rh_ticks = (uint16_t)readbuffer[3] * 256 + (uint16_t)readbuffer[4];

@@ -9,6 +9,8 @@
 
 #include <algorithm>
 
+#define IS_BIT_SET(val,mask)            (((val)&(mask)) == (mask))
+
 namespace m5
 {
 /*
@@ -30,7 +32,7 @@ namespace m5
     {
       _init = (val == 0x4A);
 #if defined (ESP_LOGV)
-      ESP_LOGV("AXP2101", "reg03h:%02x : init:%d", val, _init);
+      // ESP_LOGV("AXP2101", "reg03h:%02x : init:%d", val, _init);
 #endif
     }
     return _init;
@@ -89,34 +91,24 @@ namespace m5
     return res;
   }
 
-  void AXP2101_Class::setReg0x20Bit0(bool flg)
-  {
-#if defined (ESP_LOGE)
-    ESP_LOGE("AXP2101","setReg0x20Bit0 : %d", flg);
-#endif
-    writeRegister8(AXP2101_EFUS_OP_CFG, 0x06);
-    bitOn(AXP2101_EFREQ_CTRL, 0x04);
-    writeRegister8(AXP2101_TWI_ADDR_EXT, 0x01);
-    if (flg)
-    {
-      bitOn(0x20, 1);
-    }
-    else
-    {
-      bitOff(0x20, 1);
-    }
-    writeRegister8(AXP2101_TWI_ADDR_EXT, 0x00);
-    bitOff(AXP2101_EFREQ_CTRL, 0x04);
-    writeRegister8(AXP2101_EFUS_OP_CFG, 0x00);
-  }
-
   void AXP2101_Class::setBatteryCharge(bool enable)
   {
     std::uint8_t val = 0;
     if (readRegister(0x18, &val, 1))
     {
-      writeRegister8(0x18, (val & 0xFD) + (enable << 1));
+      writeRegister8(0x18, (val & 0xFD) | (enable << 1));
     }
+  }
+
+  void AXP2101_Class::setPreChargeCurrent(std::uint16_t max_mA)
+  {
+    static constexpr std::uint8_t table[] = { 0, 25, 50, 75, 100, 125, 150, 175, 200, 255 };
+    if (max_mA > 200) { max_mA = 200; }
+
+    size_t i = 0;
+    while (table[i] <= max_mA) { ++i; }
+    i -= 1;
+    writeRegister8(0x61, i); 
   }
 
   void AXP2101_Class::setChargeCurrent(std::uint16_t max_mA)
@@ -174,8 +166,10 @@ namespace m5
     bitOn(0x10, 0x01);
   }
 
+  //enable all ADC channel control or set default values
   void AXP2101_Class::setAdcState(bool enable)
   {
+    writeRegister8(0x30, enable == true ? 0b111111 : 0b11);
   }
 
   void AXP2101_Class::setAdcRate( std::uint8_t rate )
@@ -209,7 +203,7 @@ return false;
 
   bool AXP2101_Class::getBatState(void)
   { // Battery present state
-    return readRegister8(0x00) & 0x04;
+    return readRegister8(0x00) & 0x08;
   }
 
   std::uint8_t AXP2101_Class::getPekPress(void)
@@ -231,7 +225,12 @@ return 0;
 
   float AXP2101_Class::getVBUSVoltage(void)
   {
-return 0;
+    if (isVBUS() == false) { return 0.0f; }
+    
+    float vBus = readRegister14(0x38);
+    if (vBus >= 16375) { return 0.0f; }
+
+    return vBus / 1000.0f;
   }
 
   float AXP2101_Class::getVBUSCurrent(void)
@@ -239,9 +238,17 @@ return 0;
 return 0;
   }
 
+  float AXP2101_Class::getTSVoltage(void)
+  {
+    float volt = readRegister14(0x36);
+    if (volt >= 16375) { return 0.0f; }
+
+    return volt / 2000.0f;
+  }
+
   float AXP2101_Class::getInternalTemperature(void)
   {
-return 0;
+    return 22 + ((7274 - readRegister16(0x3C)) / 20);
   }
 
   float AXP2101_Class::getBatteryPower(void)
@@ -269,6 +276,291 @@ return 0;
 return 0;
   }
 
+  bool AXP2101_Class::enableIRQ(std::uint64_t registerEn)
+  {
+    return setIRQEnRegister(registerEn, true);
+  }
+
+  bool AXP2101_Class::disableIRQ(std::uint64_t registerEn)
+  {
+    return setIRQEnRegister(registerEn, false);
+  }
+
+  bool AXP2101_Class::setIRQEnRegister(std::uint64_t registerEn, bool enable)
+  {
+    int res = 0;
+    uint8_t data = 0, value = 0;
+    if (registerEn & 0x0000FF) 
+    {
+      value = registerEn & 0xFF;
+      data = readRegister8(AXP2101_IRQEN0);
+      intRegister[0] =  enable ? (data | value) : (data & (~value));
+      res |= writeRegister8(AXP2101_IRQEN0, intRegister[0]);
+    }
+    if (registerEn & 0x00FF00) 
+    {
+      value = registerEn >> 8;
+      data = readRegister8(AXP2101_IRQEN1);
+      intRegister[1] =  enable ? (data | value) : (data & (~value));
+      res |= writeRegister8(AXP2101_IRQEN1, intRegister[1]);
+    }
+    if (registerEn & 0xFF0000) 
+    {
+      value = registerEn >> 16;
+      data = readRegister8(AXP2101_IRQEN2);
+      intRegister[2] =  enable ? (data | value) : (data & (~value));
+      res |= writeRegister8(AXP2101_IRQEN2, intRegister[2]);
+    }
+    return res == 0;
+  }
+
+  std::uint64_t AXP2101_Class::getIRQStatuses(void)
+  {
+    statusRegister[0] = readRegister8(AXP2101_IRQSTAT0);
+    statusRegister[1] = readRegister8(AXP2101_IRQSTAT1);
+    statusRegister[2] = readRegister8(AXP2101_IRQSTAT2);
+    return (uint32_t)(statusRegister[0] << 16) | (uint32_t)(statusRegister[1] << 8) | (uint32_t)(statusRegister[2]);
+  }
+
+  void AXP2101_Class::clearIRQStatuses()
+  {
+    for (int i = 0; i < AXP2101_IRQSTAT_CNT; i++) 
+    {
+      writeRegister8(AXP2101_IRQSTAT0 + i, 0xFF);
+      statusRegister[i] = 0;
+    }
+  }
+
+  bool AXP2101_Class::isDropWarningLevel2Irq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_WARNING_LEVEL2;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isDropWarningLevel1Irq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_WARNING_LEVEL1;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isGaugeWdtTimeoutIrq()
+  {
+      uint8_t mask = AXP2101_IRQ_GAUGE_WDT_TIMEOUT;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatChargerOverTemperatureIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_CHG_OVER_TEMP;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatChargerUnderTemperatureIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_CHG_UNDER_TEMP;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatWorkOverTemperatureIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_OVER_TEMP;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatWorkUnderTemperatureIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_UNDER_TEMP;
+      if (intRegister[0] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[0], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isVbusInsertIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_VBUS_INSERT  >> 8;
+      if (intRegister[1] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isVbusRemoveIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_VBUS_REMOVE  >> 8;
+      if (intRegister[1] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatInsertIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_INSERT  >> 8;
+      if (intRegister[1] & mask) 
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatRemoveIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_REMOVE  >> 8;
+      if (intRegister[1] & mask)
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isPekeyShortPressIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_PKEY_SHORT_PRESS  >> 8;
+      if (intRegister[1] & mask)
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+
+  }
+
+  bool AXP2101_Class::isPekeyLongPressIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_PKEY_LONG_PRESS  >> 8;
+      if (intRegister[1] & mask)
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isPekeyNegativeIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_PKEY_NEGATIVE_EDGE  >> 8;
+      if (intRegister[1] & mask)
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isPekeyPositiveIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_PKEY_POSITIVE_EDGE  >> 8;
+      if (intRegister[1] & mask)
+      {
+          return IS_BIT_SET(statusRegister[1], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isWdtExpireIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_WDT_EXPIRE  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isLdoOverCurrentIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_LDO_OVER_CURR  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatfetOverCurrentIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BATFET_OVER_CURR  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatChagerDoneIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_CHG_DONE  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatChagerStartIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_CHG_START  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatDieOverTemperatureIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_DIE_OVER_TEMP  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isChagerOverTimeoutIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_CHAGER_TIMER  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
+
+  bool AXP2101_Class::isBatOverVoltageIrq(void)
+  {
+      uint8_t mask = AXP2101_IRQ_BAT_OVER_VOLTAGE  >> 16;
+      if (intRegister[2] & mask)
+      {
+          return IS_BIT_SET(statusRegister[2], mask);
+      }
+      return false;
+  }
 
   std::size_t AXP2101_Class::readRegister12(std::uint8_t addr)
   {

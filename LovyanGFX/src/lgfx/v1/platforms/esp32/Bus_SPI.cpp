@@ -20,12 +20,7 @@ Contributors:
 
 #include "Bus_SPI.hpp"
 
-/// ESP32-S3をターゲットにした際にREG_SPI_BASEが定義されていなかったので応急処置 ;
-#if defined ( CONFIG_IDF_TARGET_ESP32S3 )
- #if ( ESP_IDF_VERSION < ESP_IDF_VERSION_VAL(5, 3, 0) )
-  #define REG_SPI_BASE(i)   (DR_REG_SPI1_BASE + (((i)>1) ? (((i)* 0x1000) + 0x20000) : (((~(i)) & 1)* 0x1000 )))
- #endif
-#elif defined ( CONFIG_IDF_TARGET_ESP32 ) || !defined ( CONFIG_IDF_TARGET )
+#if defined ( CONFIG_IDF_TARGET_ESP32 ) || !defined ( CONFIG_IDF_TARGET )
  #define LGFX_SPIDMA_WORKAROUND
 #endif
 
@@ -67,7 +62,7 @@ Contributors:
  #define SPI_PIN_REG SPI_MISC_REG
 #endif
 
-#if defined (SOC_GDMA_SUPPORTED)  // for C3/S3
+#if defined (SOC_GDMA_SUPPORTED)  // for C3/C6/S3
  #include <soc/gdma_channel.h>
  #include <soc/gdma_reg.h>
  #include <soc/gdma_struct.h>
@@ -75,7 +70,11 @@ Contributors:
   #define DMA_OUT_LINK_CH0_REG       GDMA_OUT_LINK_CH0_REG
   #define DMA_OUTFIFO_STATUS_CH0_REG GDMA_OUTFIFO_STATUS_CH0_REG
   #define DMA_OUTLINK_START_CH0      GDMA_OUTLINK_START_CH0
-  #define DMA_OUTFIFO_EMPTY_CH0      GDMA_OUTFIFO_EMPTY_L3_CH0
+  #if defined (GDMA_OUTFIFO_EMPTY_L3_CH0)
+   #define DMA_OUTFIFO_EMPTY_CH0      GDMA_OUTFIFO_EMPTY_L3_CH0
+  #else
+   #define DMA_OUTFIFO_EMPTY_CH0      GDMA_OUTFIFO_EMPTY_CH0
+  #endif
  #endif
 #endif
 
@@ -205,7 +204,27 @@ namespace lgfx
     }
 
     auto spi_mode = _cfg.spi_mode;
-    uint32_t pin  = (spi_mode & 2) ? SPI_CK_IDLE_EDGE : 0;
+    uint32_t pin = (spi_mode & 2) ? SPI_CK_IDLE_EDGE : 0;
+    pin = pin
+#if defined ( SPI_CS0_DIS )
+            | SPI_CS0_DIS
+#endif
+#if defined ( SPI_CS1_DIS )
+            | SPI_CS1_DIS
+#endif
+#if defined ( SPI_CS2_DIS )
+            | SPI_CS2_DIS
+#endif
+#if defined ( SPI_CS3_DIS )
+            | SPI_CS3_DIS
+#endif
+#if defined ( SPI_CS4_DIS )
+            | SPI_CS4_DIS
+#endif
+#if defined ( SPI_CS5_DIS )
+            | SPI_CS5_DIS
+#endif
+    ;
 
     if (_cfg.use_lock) spi::beginTransaction(_cfg.spi_host);
 
@@ -589,6 +608,7 @@ namespace lgfx
           goto label_start;
           do
           {
+            vTaskDelay(1 / portTICK_PERIOD_MS);
             while (*cmd & SPI_USR) {}
 label_start:
             exec_spi();
@@ -878,7 +898,9 @@ label_start:
         if (0 == (length -= len1)) {
           len2 = len1;
           wait_spi();
-          memcpy(dst, (void*)spi_w0_reg, (len2 + 3) & ~3u);
+          uint8_t tmp[32];
+          memcpy(tmp, (void*)spi_w0_reg, (len2 + 3) & ~3u);
+          memcpy(dst, tmp, len2);
         } else {
           if (length < len1) {
             len1 = length;

@@ -59,9 +59,9 @@ namespace m5
     return m5gfx::i2c::writeBytes(_port_num, data, length).has_value();
   }
 
-  bool I2C_Class::read(std::uint8_t* __restrict__ result, std::size_t length) const
+  bool I2C_Class::read(std::uint8_t* __restrict__ result, std::size_t length, bool last_nack) const
   {
-    return m5gfx::i2c::readBytes(_port_num, result, length).has_value();
+    return m5gfx::i2c::readBytes(_port_num, result, length, last_nack).has_value();
   }
 
   bool I2C_Class::writeRegister(std::uint8_t address, std::uint8_t reg, const std::uint8_t* __restrict__ data, std::size_t length, std::uint32_t freq) const
@@ -95,6 +95,11 @@ namespace m5
   bool I2C_Class::bitOff(std::uint8_t address, std::uint8_t reg, std::uint8_t data, std::uint32_t freq) const
   {
     return m5gfx::i2c::bitOff(_port_num, address, reg, data, freq).has_value();
+  }
+
+  bool I2C_Class::scanID(uint8_t addr) const
+  {
+    return start(addr, false, 400000) && stop();
   }
 
   void I2C_Class::scanID(bool* __restrict__ result) const

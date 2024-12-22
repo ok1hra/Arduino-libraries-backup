@@ -17,7 +17,7 @@ class JsonObject : public detail::VariantOperators<JsonObject> {
   friend class detail::VariantAttorney;
 
  public:
-  typedef JsonObjectIterator iterator;
+  using iterator = JsonObjectIterator;
 
   // Creates an unbound reference.
   JsonObject() : data_(0), resources_(0) {}
@@ -102,9 +102,8 @@ class JsonObject : public detail::VariantOperators<JsonObject> {
   // Gets or sets the member with specified key.
   // https://arduinojson.org/v7/api/jsonobject/subscript/
   template <typename TString>
-
-  typename detail::enable_if<detail::IsString<TString>::value,
-                             detail::MemberProxy<JsonObject, TString>>::type
+  detail::enable_if_t<detail::IsString<TString>::value,
+                      detail::MemberProxy<JsonObject, TString>>
   operator[](const TString& key) const {
     return {*this, key};
   }
@@ -112,11 +111,22 @@ class JsonObject : public detail::VariantOperators<JsonObject> {
   // Gets or sets the member with specified key.
   // https://arduinojson.org/v7/api/jsonobject/subscript/
   template <typename TChar>
-
-  typename detail::enable_if<detail::IsString<TChar*>::value,
-                             detail::MemberProxy<JsonObject, TChar*>>::type
+  detail::enable_if_t<detail::IsString<TChar*>::value,
+                      detail::MemberProxy<JsonObject, TChar*>>
   operator[](TChar* key) const {
     return {*this, key};
+  }
+
+  // Gets or sets the member with specified key.
+  // https://arduinojson.org/v7/api/jsonobject/subscript/
+  template <typename TVariant>
+  detail::enable_if_t<detail::IsVariant<TVariant>::value,
+                      detail::MemberProxy<JsonObject, JsonString>>
+  operator[](const TVariant& key) const {
+    if (key.template is<JsonString>())
+      return {*this, key.template as<JsonString>()};
+    else
+      return {*this, nullptr};
   }
 
   // Removes the member at the specified iterator.
@@ -128,9 +138,19 @@ class JsonObject : public detail::VariantOperators<JsonObject> {
   // Removes the member with the specified key.
   // https://arduinojson.org/v7/api/jsonobject/remove/
   template <typename TString>
-  FORCE_INLINE void remove(const TString& key) const {
+  detail::enable_if_t<detail::IsString<TString>::value> remove(
+      const TString& key) const {
     detail::ObjectData::removeMember(data_, detail::adaptString(key),
                                      resources_);
+  }
+
+  // Removes the member with the specified key.
+  // https://arduinojson.org/v7/api/jsonobject/remove/
+  template <typename TVariant>
+  detail::enable_if_t<detail::IsVariant<TVariant>::value> remove(
+      const TVariant& key) const {
+    if (key.template is<const char*>())
+      remove(key.template as<const char*>());
   }
 
   // Removes the member with the specified key.
@@ -141,24 +161,33 @@ class JsonObject : public detail::VariantOperators<JsonObject> {
                                      resources_);
   }
 
-  // Returns true if the object contains the specified key.
+  // DEPRECATED: use obj[key].is<T>() instead
   // https://arduinojson.org/v7/api/jsonobject/containskey/
   template <typename TString>
-
-  typename detail::enable_if<detail::IsString<TString>::value, bool>::type
-  containsKey(const TString& key) const {
+  ARDUINOJSON_DEPRECATED("use obj[key].is<T>() instead")
+  detail::enable_if_t<detail::IsString<TString>::value, bool> containsKey(
+      const TString& key) const {
     return detail::ObjectData::getMember(data_, detail::adaptString(key),
                                          resources_) != 0;
   }
 
-  // Returns true if the object contains the specified key.
+  // DEPRECATED: use obj["key"].is<T>() instead
   // https://arduinojson.org/v7/api/jsonobject/containskey/
   template <typename TChar>
-
-  typename detail::enable_if<detail::IsString<TChar*>::value, bool>::type
-  containsKey(TChar* key) const {
+  ARDUINOJSON_DEPRECATED("use obj[\"key\"].is<T>() instead")
+  detail::enable_if_t<detail::IsString<TChar*>::value, bool> containsKey(
+      TChar* key) const {
     return detail::ObjectData::getMember(data_, detail::adaptString(key),
                                          resources_) != 0;
+  }
+
+  // DEPRECATED: use obj[key].is<T>() instead
+  // https://arduinojson.org/v7/api/jsonobject/containskey/
+  template <typename TVariant>
+  ARDUINOJSON_DEPRECATED("use obj[key].is<T>() instead")
+  detail::enable_if_t<detail::IsVariant<TVariant>::value, bool> containsKey(
+      const TVariant& key) const {
+    return containsKey(key.template as<const char*>());
   }
 
   // DEPRECATED: use obj[key].to<JsonArray>() instead

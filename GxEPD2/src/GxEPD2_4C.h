@@ -48,6 +48,9 @@
 #  define __has_include(x) true
 #endif
 
+#if __has_include("epd4c/GxEPD2_213c_GDEY0213F51.h")
+#include "epd4c/GxEPD2_213c_GDEY0213F51.h"
+#endif
 #if __has_include("epd4c/GxEPD2_266c_GDEY0266F51H.h")
 #include "epd4c/GxEPD2_266c_GDEY0266F51H.h"
 #endif
@@ -62,6 +65,12 @@
 #endif
 #if __has_include("epd4c/GxEPD2_437c.h")
 #include "epd4c/GxEPD2_437c.h"
+#endif
+#if __has_include("epd4c/GxEPD2_0579c_GDEY0579F51.h")
+#include "epd4c/GxEPD2_0579c_GDEY0579F51.h"
+#endif
+#if __has_include("epd4c/GxEPD2_1160c_GDEY116F51.h")
+#include "epd4c/GxEPD2_1160c_GDEY116F51.h"
 #endif
 
 template<typename GxEPD2_Type, const uint16_t page_height>
@@ -533,7 +542,7 @@ class GxEPD2_4C : public GxEPD2_GFX_BASE_CLASS
             else if ((green >= 0x8000) && (blue >= 0x8000)) cv4 = 0x01; //  green, blue > white
             else if ((red >= 0x8000) && (green >= 0xC000)) cv4 = 0x02; // yellow
             else if ((red >= 0x8000) && (green >= 0x4000)) cv4 = 0x03; // orange > red
-            else if (red >= 0x8000) cv4 = 0x04; // red
+            else if (red >= 0x8000) cv4 = 0x03; // red
             else if (green >= 0x8000) cv4 = 0x00; // green > black
             else cv4 = 0x03; // blue
           }

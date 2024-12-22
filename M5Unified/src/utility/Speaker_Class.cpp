@@ -14,12 +14,22 @@
  #endif
 #endif
 
+#if __has_include (<soc/pcr_struct.h>)
+#include <soc/pcr_struct.h>
+#endif
+
 #ifndef NON_BREAK
 #define NON_BREAK ;
 #endif
 
 #include <sdkconfig.h>
 #include <esp_log.h>
+
+#if __has_include (<hal/dac_ll.h>)
+#include <hal/dac_types.h>
+#include <hal/dac_ll.h>
+#include <driver/rtc_io.h>
+#endif
 
 #endif
 
@@ -60,6 +70,111 @@ namespace m5
     return ESP_OK;
   }
 #else
+
+#if __has_include(<driver/i2s_std.h>)
+
+  static i2s_chan_handle_t _i2s_handle[SOC_I2S_NUM] = { nullptr, };
+
+  static esp_err_t _i2s_start(i2s_port_t port) {
+    if (_i2s_handle[port] == nullptr) { return ESP_FAIL; }
+    return i2s_channel_enable(_i2s_handle[port]);
+  }
+  static esp_err_t _i2s_stop(i2s_port_t port)
+  {
+    if (_i2s_handle[port] == nullptr) { return ESP_OK; }
+    return i2s_channel_disable(_i2s_handle[port]);
+  }
+  static esp_err_t _i2s_write(i2s_port_t port, void* buf, size_t len, size_t* result, TickType_t tick) {
+    return i2s_channel_write(_i2s_handle[port], buf, len, result, tick);
+  }
+  static esp_err_t _i2s_driver_uninstall(i2s_port_t port)
+  {
+    if (_i2s_handle[port] != nullptr) {
+      auto res = i2s_del_channel(_i2s_handle[port]);
+      _i2s_handle[port] = nullptr;
+      return res;
+    }
+    return ESP_OK;
+  }
+#if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)  
+  static esp_err_t _i2s_set_dac(i2s_port_t port, bool left_en, bool right_en) {
+    if (port == I2S_NUM_0)
+    { /// DACモードの設定を有効にする(I2S0のみ。I2S1はDAC,ADC非対応) ;
+      bool dac_en = left_en || right_en;
+      bool flg[2] = { right_en, left_en };
+      static constexpr const gpio_num_t gpio_table[2] = { GPIO_NUM_25, GPIO_NUM_26 }; // for ESP32 (not ESP32S2, s2=gpio17,gpio18)
+      static constexpr const dac_channel_t ch_table[] = { DAC_CHAN_0, DAC_CHAN_1 };
+      for (int i = 0; i < 2; ++i)
+      {
+        bool en = flg[i];
+        auto channel = ch_table[i];
+        if (en)
+        {
+          auto gpio_num = gpio_table[i];
+          rtc_gpio_init(gpio_num);
+          rtc_gpio_set_direction(gpio_num, RTC_GPIO_MODE_DISABLED);
+          rtc_gpio_pullup_dis(gpio_num);
+          rtc_gpio_pulldown_dis(gpio_num);
+          dac_ll_power_on(channel);
+        } else {
+          dac_ll_power_down(channel);
+        }
+      }
+      if (dac_en == true) {
+        dac_ll_rtc_sync_by_adc(false);
+      }
+      dac_ll_digi_enable_dma(dac_en);
+
+      I2S0.conf2.lcd_en = true;
+      I2S0.conf.tx_right_first = false;
+      I2S0.conf.tx_msb_shift = 0;
+      I2S0.conf.tx_short_sync = 0;
+      return ESP_OK;
+    }
+    return ESP_FAIL;
+  }
+#endif
+
+#else
+  static esp_err_t _i2s_start(i2s_port_t port)
+  {
+    return i2s_start(port);
+  }
+  static esp_err_t _i2s_stop(i2s_port_t port)
+  {
+    return i2s_stop(port);
+  }
+  static esp_err_t _i2s_write(i2s_port_t port, void* buf, size_t len, size_t* result, TickType_t tick)
+  {
+    return i2s_write(port, buf, len, result, tick);
+  }
+  static esp_err_t _i2s_driver_uninstall(i2s_port_t port)
+  {
+    return i2s_driver_uninstall(port);
+  }
+#if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
+  static esp_err_t _i2s_set_dac(i2s_port_t port, bool left_en, bool right_en) {
+    if (port == I2S_NUM_0)
+    { /// レジスタを操作してDACモードの設定を有効にする(I2S0のみ。I2S1はDAC,ADC非対応) ;
+      i2s_dac_mode_t dac_mode = i2s_dac_mode_t::I2S_DAC_CHANNEL_DISABLE;
+      if (left_en) {
+        dac_mode = right_en ? I2S_DAC_CHANNEL_BOTH_EN : i2s_dac_mode_t::I2S_DAC_CHANNEL_LEFT_EN;
+      }
+      else if (right_en) {
+        dac_mode = i2s_dac_mode_t::I2S_DAC_CHANNEL_RIGHT_EN;
+      }
+      i2s_set_dac_mode(dac_mode);
+      I2S0.conf2.lcd_en = true;
+      I2S0.conf.tx_right_first = false;
+      I2S0.conf.tx_msb_shift = 0;
+      I2S0.conf.tx_short_sync = 0;
+      return ESP_OK;
+    }
+    return ESP_FAIL;
+  }
+#endif
+#endif
+
   esp_err_t Speaker_Class::_setup_i2s(void)
   {
     if (_cfg.pin_data_out < 0) { return ESP_FAIL; }
@@ -68,6 +183,54 @@ namespace m5
     /// DACが使用できるのはI2Sポート0のみ。;
     if (_cfg.use_dac && _cfg.i2s_port != I2S_NUM_0) { return ESP_FAIL; }
 #endif
+#if __has_include(<driver/i2s_std.h>)
+
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(_cfg.i2s_port, I2S_ROLE_MASTER);
+    chan_cfg.dma_desc_num = _cfg.dma_buf_count;
+    chan_cfg.dma_frame_num = _cfg.dma_buf_len;
+    chan_cfg.auto_clear = true;
+    _i2s_driver_uninstall(_cfg.i2s_port);
+    esp_err_t err = i2s_new_channel(&chan_cfg, &_i2s_handle[_cfg.i2s_port], nullptr);
+    if (err != ESP_OK) { return err; }
+
+    i2s_std_config_t i2s_config;
+    memset(&i2s_config, 0, sizeof(i2s_std_config_t));
+    i2s_config.clk_cfg.clk_src = i2s_clock_src_t::I2S_CLK_SRC_PLL_160M;
+    i2s_config.clk_cfg.sample_rate_hz = 48000; // dummy setting
+    i2s_config.clk_cfg.mclk_multiple = i2s_mclk_multiple_t::I2S_MCLK_MULTIPLE_128; // dummy setting
+    // i2s_config.slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(16, I2S_SLOT_MODE_STEREO);
+    i2s_config.slot_cfg.data_bit_width = i2s_data_bit_width_t::I2S_DATA_BIT_WIDTH_16BIT;
+    i2s_config.slot_cfg.slot_bit_width = i2s_slot_bit_width_t::I2S_SLOT_BIT_WIDTH_16BIT;
+    i2s_config.slot_cfg.slot_mode = (_cfg.stereo || _cfg.buzzer) ? i2s_slot_mode_t::I2S_SLOT_MODE_STEREO :  i2s_slot_mode_t::I2S_SLOT_MODE_MONO;
+    i2s_config.slot_cfg.slot_mask = i2s_std_slot_mask_t::I2S_STD_SLOT_BOTH;
+    i2s_config.slot_cfg.ws_width = 16;
+    i2s_config.slot_cfg.ws_pol = false;
+    i2s_config.slot_cfg.bit_shift = true;
+#if SOC_I2S_HW_VERSION_1    // For esp32/esp32-s2
+    i2s_config.slot_cfg.msb_right = false;
+#else
+    i2s_config.slot_cfg.left_align = true;
+    i2s_config.slot_cfg.big_endian = false;
+    i2s_config.slot_cfg.bit_order_lsb = false;
+#endif
+    i2s_config.gpio_cfg.bclk = (gpio_num_t)_cfg.pin_bck;
+    i2s_config.gpio_cfg.ws   = (gpio_num_t)_cfg.pin_ws;
+    i2s_config.gpio_cfg.dout = (gpio_num_t)_cfg.pin_data_out;
+    i2s_config.gpio_cfg.mclk = (gpio_num_t)I2S_PIN_NO_CHANGE;
+    i2s_config.gpio_cfg.din  = (gpio_num_t)I2S_PIN_NO_CHANGE;
+    err = i2s_channel_init_std_mode(_i2s_handle[_cfg.i2s_port], &i2s_config);
+
+#if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
+    if (_cfg.use_dac)
+    {
+      bool left_en = _cfg.stereo || (_cfg.pin_data_out == GPIO_NUM_26);
+      bool right_en = _cfg.stereo || (_cfg.pin_data_out == GPIO_NUM_25);
+      err = _i2s_set_dac(_cfg.i2s_port, left_en, right_en);
+    }
+#endif
+
+    return err;
+#else
 
     i2s_config_t i2s_config;
     memset(&i2s_config, 0, sizeof(i2s_config_t));
@@ -95,7 +258,7 @@ namespace m5
     esp_err_t err;
     if (ESP_OK != (err = i2s_driver_install(_cfg.i2s_port, &i2s_config, 0, nullptr)))
     {
-      i2s_driver_uninstall(_cfg.i2s_port);
+      _i2s_driver_uninstall(_cfg.i2s_port);
       err = i2s_driver_install(_cfg.i2s_port, &i2s_config, 0, nullptr);
     }
     if (err != ESP_OK) { return err; }
@@ -103,21 +266,9 @@ namespace m5
 #if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
     if (_cfg.use_dac)
     {
-      i2s_dac_mode_t dac_mode = i2s_dac_mode_t::I2S_DAC_CHANNEL_BOTH_EN;
-      if (!_cfg.stereo)
-      {
-        dac_mode = (_cfg.pin_data_out == GPIO_NUM_25)
-                ? i2s_dac_mode_t::I2S_DAC_CHANNEL_RIGHT_EN // for GPIO 25
-                : i2s_dac_mode_t::I2S_DAC_CHANNEL_LEFT_EN; // for GPIO 26
-      }
-      err = i2s_set_dac_mode(dac_mode);
-      if (_cfg.i2s_port == I2S_NUM_0)
-      { /// レジスタを操作してDACモードの設定を有効にする(I2S0のみ。I2S1はDAC,ADC非対応) ;
-        I2S0.conf2.lcd_en = true;
-        I2S0.conf.tx_right_first = false;
-        I2S0.conf.tx_msb_shift = 0;
-        I2S0.conf.tx_short_sync = 0;
-      }
+      bool right_en = _cfg.stereo || (_cfg.pin_data_out == GPIO_NUM_25);
+      bool left_en = _cfg.stereo || (_cfg.pin_data_out == GPIO_NUM_26);
+      err = _i2s_set_dac(_cfg.i2s_port, left_en, right_en);
     }
     else
 #endif
@@ -126,6 +277,7 @@ namespace m5
     }
 
     return err;
+#endif
   }
 #endif
 
@@ -188,7 +340,6 @@ namespace m5
   void Speaker_Class::spk_task(void* args)
   {
     auto self = (Speaker_Class*)args;
-    const i2s_port_t i2s_port = self->_cfg.i2s_port;
     const bool out_stereo = self->_cfg.stereo;
     const size_t dma_buf_len = self->_cfg.dma_buf_len & ~1;
 
@@ -209,9 +360,13 @@ namespace m5
     const int32_t spk_sample_rate_x256 = self->_cfg.sample_rate * SAMPLERATE_MUL;
 
 #else
-    i2s_stop(i2s_port);
+    const i2s_port_t i2s_port = self->_cfg.i2s_port;
 
-    static constexpr uint32_t PLL_D2_CLK = 80*1000*1000; // 80 MHz
+#if defined ( CONFIG_IDF_TARGET_ESP32C3 ) || defined (CONFIG_IDF_TARGET_ESP32C6) || defined ( CONFIG_IDF_TARGET_ESP32S3 )
+    static constexpr uint32_t PLL_D2_CLK = 120*1000*1000; // 240 MHz/2
+#else
+    static constexpr uint32_t PLL_D2_CLK = 80*1000*1000; // 160 MHz/2
+#endif
     uint32_t bits = (self->_cfg.use_dac) ? 1 : 16; /// 1サンプリング当たりの出力ビット数;
     uint32_t div_a, div_b, div_n;
     uint32_t div_m = 32 / bits; /// MCLKを使用しない場合、サンプリングレート誤差が少なくなるようにdiv_mを調整する;
@@ -223,10 +378,10 @@ namespace m5
     const int32_t spk_sample_rate_x256 = (float)PLL_D2_CLK * SAMPLERATE_MUL / ((float)(div_b * div_m * bits) / (float)div_a + (div_n * div_m * bits));
 //  ESP_EARLY_LOGW("Speaker_Class", "sample rate:%d Hz = %d MHz/(%d+(%d/%d))/%d/%d = %d Hz", self->_cfg.sample_rate, PLL_D2_CLK / 1000000, div_n, div_b, div_a, div_m, bits, spk_sample_rate_x256 / SAMPLERATE_MUL);
 
-#if defined ( I2S1I_BCK_OUT_IDX )
-    auto dev = (i2s_port == i2s_port_t::I2S_NUM_1) ? &I2S1 : &I2S0;
-#else
+#if SOC_I2S_NUM == 1
     auto dev = &I2S0;
+#else
+    auto dev = (i2s_port == i2s_port_t::I2S_NUM_1) ? &I2S1 : &I2S0;
 #endif
 
 #if defined ( CONFIG_IDF_TARGET_ESP32C3 ) || defined (CONFIG_IDF_TARGET_ESP32C6) || defined ( CONFIG_IDF_TARGET_ESP32S3 )
@@ -238,11 +393,9 @@ namespace m5
     }
 
     dev->tx_conf1.tx_bck_div_num = div_m - 1;
-    dev->tx_clkm_conf.tx_clkm_div_num = div_n;
 
-    dev->tx_clkm_div_conf.val = 0;
-    if (div_b > (div_a >> 1)) {
-      dev->tx_clkm_div_conf.tx_clkm_div_yn1 = 1;
+    bool yn1 = (div_b > (div_a >> 1));
+    if (yn1) {
       div_b = div_a - div_b;
     }
     int div_y = 1;
@@ -262,13 +415,27 @@ namespace m5
       }
     }
 
+#if __has_include (<soc/pcr_struct.h>) // for C6
+    PCR.i2s_tx_clkm_div_conf.i2s_tx_clkm_div_x = div_x;
+    PCR.i2s_tx_clkm_div_conf.i2s_tx_clkm_div_y = div_y;
+    PCR.i2s_tx_clkm_div_conf.i2s_tx_clkm_div_z = div_b;
+    PCR.i2s_tx_clkm_div_conf.i2s_tx_clkm_div_yn1 = yn1;
+    PCR.i2s_tx_clkm_conf.i2s_tx_clkm_div_num = div_n;
+    PCR.i2s_tx_clkm_conf.i2s_tx_clkm_sel = 1;   // PLL_240M_CLK
+    PCR.i2s_tx_clkm_conf.i2s_tx_clkm_en = 1;
+    PCR.pll_div_clk_en.pll_240m_clk_en = 1;
+#else
     dev->tx_clkm_div_conf.tx_clkm_div_x = div_x;
     dev->tx_clkm_div_conf.tx_clkm_div_y = div_y;
     dev->tx_clkm_div_conf.tx_clkm_div_z = div_b;
-
-    dev->tx_clkm_conf.tx_clk_sel = 2;   // PLL_160M_CLK
+    dev->tx_clkm_div_conf.tx_clkm_div_yn1 = yn1;
+    dev->tx_clkm_conf.tx_clkm_div_num = div_n;
+    dev->tx_clkm_conf.tx_clk_sel = 1;   // PLL_240M_CLK
     dev->tx_clkm_conf.clk_en = 1;
     dev->tx_clkm_conf.tx_clk_active = 1;
+    dev->tx_conf.tx_update = 1;
+    dev->tx_conf.tx_update = 0;
+#endif
 
 #else
 
@@ -285,15 +452,7 @@ namespace m5
     dev->conf.tx_fifo_reset = 0;
 
 #endif
-    i2s_zero_dma_buffer(i2s_port);
-#endif
-    // ステレオ出力の場合は倍率を2倍する
-    const float magnification = (float)(self->_cfg.magnification << out_stereo) / spk_sample_rate_x256 / (1 << 28);
-
-    int32_t dac_offset = std::min(INT16_MAX-255, self->_cfg.dac_zero_level << 8);
-
-    uint8_t buf_cnt = 0;
-    bool flg_nodata = false;
+    // i2s_zero_dma_buffer(i2s_port);
 
     enum spk_i2s_state
     {
@@ -302,7 +461,14 @@ namespace m5
       spk_i2s_run,
     };
     spk_i2s_state flg_i2s_started = spk_i2s_stop;
+#endif
+    // ステレオ出力の場合は倍率を2倍する
+    const float magnification = (float)(self->_cfg.magnification << out_stereo) / spk_sample_rate_x256 / (1 << 28);
 
+    int32_t dac_offset = std::min(INT16_MAX-255, self->_cfg.dac_zero_level << 8);
+
+    uint8_t buf_cnt = 0;
+    bool flg_nodata = false;
 
     union
     {
@@ -340,7 +506,7 @@ namespace m5
               sound_buf32[idx] = tmp | tmp << 16;
             } while (++idx < dma_buf_len);
             size_t write_bytes;
-            i2s_write(i2s_port, sound_buf32, dma_buf_len * sizeof(int32_t), &write_bytes, portMAX_DELAY);
+            _i2s_write(i2s_port, sound_buf32, dma_buf_len * sizeof(int32_t), &write_bytes, portMAX_DELAY);
             if (self->_cfg.dac_zero_level == 0)
             {
               dac_offset = 0;
@@ -354,7 +520,7 @@ namespace m5
           while (!ulTaskNotifyTake( pdTRUE, 0 ) && --retry)
           {
             size_t write_bytes;
-            i2s_write(i2s_port, sound_buf32, dma_buf_len * sizeof(int32_t), &write_bytes, portMAX_DELAY);
+            _i2s_write(i2s_port, sound_buf32, dma_buf_len * sizeof(int32_t), &write_bytes, portMAX_DELAY);
           }
 
           if (!retry)
@@ -363,8 +529,8 @@ namespace m5
             if (self->_cfg.use_dac)
             {
               flg_i2s_started = spk_i2s_stop;
-              i2s_stop(i2s_port);
-              i2s_set_dac_mode(i2s_dac_mode_t::I2S_DAC_CHANNEL_DISABLE);
+              _i2s_stop(i2s_port);
+              _i2s_set_dac(i2s_port, false, false); //i2s_dac_mode_t::I2S_DAC_CHANNEL_DISABLE);
             }
 #endif
             // 新しいデータが届くまで待機;
@@ -382,7 +548,7 @@ namespace m5
     flg_nodata = true;
 
 #if defined (SDL_h_)
-      auto border = std::max<int>(2048, self->_cfg.sample_rate >> 3);
+      uint32_t border = std::max<int>(2048, self->_cfg.sample_rate >> 3);
       while (SDL_GetQueuedAudioSize(1) > border) { SDL_Delay(1); }
 #else
       if (flg_i2s_started != spk_i2s_run)
@@ -392,17 +558,12 @@ namespace m5
 #if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
           if (self->_cfg.use_dac)
           {
-            i2s_dac_mode_t dac_mode = i2s_dac_mode_t::I2S_DAC_CHANNEL_BOTH_EN;
-            if (!out_stereo)
-            {
-              dac_mode = (self->_cfg.pin_data_out == GPIO_NUM_25)
-                      ? i2s_dac_mode_t::I2S_DAC_CHANNEL_RIGHT_EN // for GPIO 25
-                      : i2s_dac_mode_t::I2S_DAC_CHANNEL_LEFT_EN; // for GPIO 26
-            }
-            i2s_set_dac_mode(dac_mode);
+            bool left_en = out_stereo || (self->_cfg.pin_data_out == GPIO_NUM_26);
+            bool right_en = out_stereo || (self->_cfg.pin_data_out == GPIO_NUM_25);
+            _i2s_set_dac(i2s_port, left_en, right_en);
           }
 #endif
-          i2s_start(i2s_port);
+          _i2s_start(i2s_port);
         }
 
         if (self->_cfg.use_dac && self->_cfg.dac_zero_level != 0)
@@ -414,7 +575,7 @@ namespace m5
             sound_buf32[idx] = tmp | tmp << 16;
           } while (++idx < dma_buf_len);
           size_t write_bytes;
-          i2s_write(i2s_port, sound_buf32, dma_buf_len * sizeof(int32_t), &write_bytes, portMAX_DELAY);
+          _i2s_write(i2s_port, sound_buf32, dma_buf_len * sizeof(int32_t), &write_bytes, portMAX_DELAY);
         }
         flg_i2s_started = spk_i2s_run;
       }
@@ -686,10 +847,10 @@ label_continue_sample:
 #else
         size_t write_bytes;
         size_t data_bytes = data_length * sizeof(int16_t) << self->_cfg.buzzer;
-        i2s_write(i2s_port, sound_buf32, data_bytes, &write_bytes, 0);
+        _i2s_write(i2s_port, sound_buf32, data_bytes, &write_bytes, 0);
         if (write_bytes < data_bytes) {
           auto sb8 = (uint8_t*)sound_buf32;
-          i2s_write(i2s_port, &sb8[write_bytes], data_bytes - write_bytes, &write_bytes, portMAX_DELAY);
+          _i2s_write(i2s_port, &sb8[write_bytes], data_bytes - write_bytes, &write_bytes, portMAX_DELAY);
           buf_cnt = self->_cfg.dma_buf_count;
         }
 #endif
@@ -699,11 +860,11 @@ label_continue_sample:
     SDL_CloseAudioDevice(1);
     SDL_CloseAudio();
 #else
-    i2s_stop(i2s_port);
+    _i2s_stop(i2s_port);
 #if !defined (CONFIG_IDF_TARGET) || defined (CONFIG_IDF_TARGET_ESP32)
     if (self->_cfg.use_dac)
     {
-      i2s_set_dac_mode(i2s_dac_mode_t::I2S_DAC_CHANNEL_DISABLE);
+      _i2s_set_dac(i2s_port, false, false);
       m5gfx::gpio_lo(self->_cfg.pin_data_out);
       m5gfx::pinMode(self->_cfg.pin_data_out, m5gfx::pin_mode_t::output);
     }
@@ -727,11 +888,11 @@ label_continue_sample:
     res = (ESP_OK == _setup_i2s()) && res;
     if (res)
     {
-      size_t stack_size = 1280 + (_cfg.dma_buf_len * sizeof(uint32_t));
       _task_running = true;
 #if defined (SDL_h_)
-      _task_handle = SDL_CreateThread((SDL_ThreadFunction)spk_task, "spk_task", this);
+      _task_handle = SDL_CreateThread(reinterpret_cast<SDL_ThreadFunction>(spk_task), "spk_task", this);
 #else
+      size_t stack_size = 1280 + (_cfg.dma_buf_len * sizeof(uint32_t));
 
 #if portNUM_PROCESSORS > 1
       if (_cfg.task_pinned_core < portNUM_PROCESSORS)

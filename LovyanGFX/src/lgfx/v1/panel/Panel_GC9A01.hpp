@@ -184,8 +184,8 @@ namespace lgfx
         0xEA, 1, 0x22,
         0xC6, 1, 0x30,
         0xC7, 1, 0x18,
-        0xF0, 14, 0x1F,0x28,0x04,0x3E,0x2A,0x2E,0x20,0x00,0x0C,0x06,0x00,0x1C,0x1F,0x0f,
-        0xF1, 14, 0X00,0X2D,0X2F,0X3C,0X6F,0X1C,0X0B,0X00,0X00,0X00,0X07,0X0D,0X11,0X0f,
+        0xF0, 14, 0x01,0x2b,0x23,0x3c,0xb7,0x12,0x17,0x60,0x00,0x06,0x0c,0x17,0x12,0x1f,
+        0xF1, 14, 0x05,0x2e,0x2d,0x44,0xd6,0x15,0x17,0xa0,0x02,0x0d,0x0d,0x1a,0x18,0x1f,
         0x11, 0+CMD_INIT_DELAY, 120,
         0x29, 0,
         0xFF,0xFF, // end
@@ -194,6 +194,95 @@ namespace lgfx
       case 0: return list0;
       default: return nullptr;
       }
+    }
+  };
+
+  struct Panel_GC9307  : public Panel_GC9xxx
+  {
+      Panel_GC9307(void)
+      {
+          _cfg.panel_height = _cfg.memory_height = 320;
+          _cfg.dummy_read_pixel = 16;
+      }
+
+      void setWindow(uint_fast16_t xs, uint_fast16_t ys, uint_fast16_t xe, uint_fast16_t ye) override
+      {
+        if (_internal_rotation % 2 == 0) {
+          _bus->writeCommand(CMD_CASET, 8);
+          _bus->writeData((xs + 34) >> 8 | ((xs + 34) & 0xFF) << 8 | ((xe + 34) << 8 | (xe + 34) >> 8) << 16, 32);
+          _bus->writeCommand(CMD_RASET, 8);
+          _bus->writeData(ys >> 8 | (ys & 0xFF) << 8 | (ye << 8 | ye >> 8) << 16, 32);
+        } else if (_internal_rotation % 2 == 1) {
+          _bus->writeCommand(CMD_CASET, 8);
+          _bus->writeData(xs >> 8 | (xs & 0xFF) << 8 | (xe << 8 | xe >> 8) << 16, 32);
+          _bus->writeCommand(CMD_RASET, 8);
+          _bus->writeData((ys + 34) >> 8 | ((ys + 34) & 0xFF) << 8 | ((ye + 34) << 8 | (ye + 34) >> 8) << 16, 32);
+        }
+        _bus->writeCommand(CMD_RAMWR, 8);
+      }
+
+  protected:
+
+      const uint8_t* getInitCommands(uint8_t listno) const override {
+
+          static constexpr uint8_t list0[] = {
+            0xfe, 0,
+            0xef, 0,
+            // 0x36, 1, 0x48,
+            // 0x3a, 1, 0x05,
+            0x85, 1, 0xc0,
+            0x86, 1, 0x98,
+            0x87, 1, 0x28,
+            0x89, 1, 0x33,
+            0x8B, 1, 0x84,
+            0x8D, 1, 0x3B,
+            0x8E, 1, 0x0f,
+            0x8F, 1, 0x70,
+            0xe8, 2, 0x13, 0x17,
+            0xec, 3, 0x57, 0x07, 0xff,
+            0xed, 2, 0x18, 0x09,
+            0xc9, 1, 0x10,
+            0xff, 1, 0x61,
+            0x99, 1, 0x3A,
+            0x9d, 1, 0x43,
+            0x98, 1, 0x3e,
+            0x9c, 1, 0x4b,
+            0xF0, 6, 0x06, 0x08, 0x08, 0x06, 0x05, 0x1d,
+            0xF2, 6, 0x00, 0x01, 0x09, 0x07, 0x04, 0x23,
+            0xF1, 6, 0x3b, 0x68, 0x66, 0x36, 0x35, 0x2f,
+            0xF3, 6, 0x37, 0x6a, 0x66, 0x37, 0x35, 0x35,
+            0xFA, 2, 0x80, 0x0f,
+            0xBE, 1, 0x11,
+            0xCB, 1, 0x02,
+            0xCD, 1, 0x22,
+            0x9B, 1, 0xFF,
+            0x35, 1, 0x00,
+            0x44, 2, 0x00, 0x0a,
+            0x11, 0+CMD_INIT_DELAY, 200,
+            0x29, 0,
+            0xFF,0xFF, // end
+          };
+          switch (listno) {
+              case 0: return list0;
+              default: return nullptr;
+          }
+      }
+    uint8_t getMadCtl(uint8_t r) const override
+    {
+      static constexpr uint8_t madctl_table[] =
+      {
+        // 7      | 6      | 5      | 4       | 3       | 2      | 1 | 0
+        // MAD_MY | MAD_MX | MAD_MV | MAD_ML  | MAD_BGR | MAD_MH | 0 | 0,
+               MAD_MX                             , // 0
+                      MAD_MV|MAD_ML        |MAD_MH, // 1
+        MAD_MY                                    , // 2
+        MAD_MY|MAD_MX|MAD_MV                      , // 3
+        MAD_MY|MAD_MX                             , // 4
+               MAD_MX|MAD_MV                      , // 5
+        0                                         , // 6
+        MAD_MY|MAD_MV                             , // 7
+      };
+      return madctl_table[r];
     }
   };
 
