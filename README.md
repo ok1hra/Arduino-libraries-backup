@@ -9,6 +9,7 @@ git checkout c2c8d189928386c872aa6cd7ba7a87c8019c5663
 ```
 
 
+```
 > ~/Arduino/hardware/espressif/esp32$ git remote -v
 > origin	https://github.com/espressif/arduino-esp32.git (fetch)
 > origin	https://github.com/espressif/arduino-esp32.git (push)
@@ -21,3 +22,4 @@ git checkout c2c8d189928386c872aa6cd7ba7a87c8019c5663
 > 
 > ~/Arduino/hardware/espressif/esp32$ git branch --show-current
 > master
+```
